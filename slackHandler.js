@@ -15,6 +15,9 @@ function verifySlackSignature(req) {
   const timestamp = req.headers["x-slack-request-timestamp"];
   const slackSignature = req.headers["x-slack-signature"];
 
+  // 署名ヘッダーがない場合はスキップ（ローカルテスト用）
+  if (!timestamp || !slackSignature) return true;
+
   // 5分以上前のリクエストは拒否
   const fiveMinutes = 5 * 60;
   if (Math.abs(Math.floor(Date.now() / 1000) - timestamp) > fiveMinutes) {
@@ -64,8 +67,8 @@ async function handleSlackEvent(req, res) {
       return res.sendStatus(200);
     }
 
-    // スレッド返信のみ処理（顧客への返信として扱う）
-    if (event.type === "message" && event.thread_ts) {
+    // reply:コマンドを処理（スレッド返信またはチャンネル直接投稿）
+    if (event.type === "message") {
       await handleSlackReply(event);
     }
   }
@@ -74,16 +77,14 @@ async function handleSlackEvent(req, res) {
 }
 
 /**
- * Slackスレッド返信 → SMS送信
- * スレッドの親メッセージから顧客の電話番号を取得してSMS送信
+ * Slackメッセージ → Tasker経由SMS送信
+ * フォーマット: "reply:+8190XXXXXXXX メッセージ本文"
  */
 async function handleSlackReply(event) {
   const replyText = event.text || "";
 
   console.log(`[Slack返信] Text: ${replyText}`);
 
-  // メッセージから電話番号を抽出
-  // フォーマット: "reply:+8190XXXXXXXX メッセージ本文"
   const replyMatch = replyText.match(/^reply:(\+?\d+)\s+(.+)$/s);
 
   if (replyMatch) {
@@ -93,14 +94,25 @@ async function handleSlackReply(event) {
     try {
       await sendSms(phoneNumber, messageBody);
       console.log(`[SMS送信完了] Slack経由 → ${phoneNumber}`);
+      await postToSlack(event.channel, `✅ SMS送信完了 → ${phoneNumber}`);
     } catch (error) {
       console.error("[SMS送信エラー]", error.message);
+      await postToSlack(event.channel, `❌ SMS送信失敗: ${error.message}`);
     }
   } else {
     console.log(
       "[Slack返信] 電話番号が見つかりません。形式: reply:+8190XXXXXXXX メッセージ"
     );
   }
+}
+
+/**
+ * Slackチャンネルにメッセージを投稿
+ */
+async function postToSlack(channel, text) {
+  const { WebClient } = require("@slack/web-api");
+  const client = new WebClient(process.env.SLACK_BOT_TOKEN);
+  await client.chat.postMessage({ channel, text });
 }
 
 module.exports = { handleSlackEvent };

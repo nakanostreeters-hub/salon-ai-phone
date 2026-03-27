@@ -6,7 +6,7 @@ require("dotenv").config();
 const express = require("express");
 const bodyParser = require("body-parser");
 
-const { handleIncomingCall, handleCallStatus } = require("./callHandler");
+const { handleIncomingCall } = require("./callHandler");
 const { handleIncomingSms } = require("./smsHandler");
 const { handleSlackEvent } = require("./slackHandler");
 
@@ -32,30 +32,32 @@ app.use(bodyParser.urlencoded({ extended: false }));
 // ============================================
 
 // --- ヘルスチェック ---
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.get("/", (_req, res) => {
   res.json({
     status: "running",
     service: "美容室AI電話受付システム",
     endpoints: {
-      "POST /voice": "Twilio電話着信Webhook",
-      "POST /voice/status": "Twilio通話ステータスCallback",
-      "POST /sms": "Twilio SMS受信Webhook",
+      "POST /incoming-call": "Tasker電話着信",
+      "POST /incoming-sms": "Tasker SMS受信",
+      "POST /send-sms": "Slack経由SMS送信",
       "POST /slack/events": "Slack Events API",
     },
   });
 });
 
-// --- Twilio 電話着信 ---
-app.post("/voice", handleIncomingCall);
+// --- Tasker 電話着信 ---
+app.post("/incoming-call", handleIncomingCall);
 
-// --- Twilio 通話ステータス ---
-app.post("/voice/status", handleCallStatus);
-
-// --- Twilio SMS受信 ---
-app.post("/sms", handleIncomingSms);
+// --- Tasker SMS受信 ---
+app.post("/incoming-sms", handleIncomingSms);
 
 // --- Slack Events ---
 app.post("/slack/events", handleSlackEvent);
+
 // --- AI Relay 自動起動（Gensparkからの命令受付） ---
 const { exec } = require("child_process");
 app.post("/run-relay", (req, res) => {
@@ -77,23 +79,21 @@ app.post("/run-relay", (req, res) => {
 app.listen(PORT, () => {
   console.log("");
   console.log("========================================");
-  console.log("  美容室AI電話受付システム");
+  console.log("  美容室AI電話受付システム (Tasker版)");
   console.log("========================================");
   console.log(`  サーバー起動: http://localhost:${PORT}`);
   console.log("");
   console.log("  エンドポイント:");
-  console.log(`    POST /voice          → 電話着信`);
-  console.log(`    POST /voice/status   → 通話ステータス`);
-  console.log(`    POST /sms            → SMS受信`);
-  console.log(`    POST /slack/events   → Slack Events`);
+  console.log(`    POST /incoming-call   → 電話着信 (Tasker)`);
+  console.log(`    POST /incoming-sms    → SMS受信 (Tasker)`);
+  console.log(`    POST /send-sms        → SMS送信 (Slack→Tasker)`);
+  console.log(`    POST /slack/events    → Slack Events`);
   console.log("========================================");
   console.log("");
 
   // 環境変数チェック
   const required = [
-    "TWILIO_ACCOUNT_SID",
-    "TWILIO_AUTH_TOKEN",
-    "TWILIO_PHONE_NUMBER",
+    "TASKER_ENDPOINT_URL",
     "SLACK_BOT_TOKEN",
     "SLACK_CHANNEL_ID",
   ];

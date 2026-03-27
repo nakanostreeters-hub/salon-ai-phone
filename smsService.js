@@ -1,41 +1,32 @@
 // ============================================
 // services/smsService.js
-// Twilio SMS送信サービス
+// Tasker経由SMS送信サービス
 // ============================================
-const twilio = require("twilio");
-
-let client = null;
 
 /**
- * Twilioクライアント初期化（遅延初期化）
- */
-function getClient() {
-  if (!client) {
-    client = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
-  }
-  return client;
-}
-
-/**
- * SMS送信
+ * Tasker (楽天ミニ) 経由でSMS送信
  * @param {string} to - 送信先電話番号（+81形式）
  * @param {string} body - メッセージ本文
- * @returns {Promise<object>} Twilioメッセージオブジェクト
  */
 async function sendSms(to, body) {
-  const twilioClient = getClient();
+  const endpoint = process.env.TASKER_ENDPOINT_URL;
+  if (!endpoint) {
+    throw new Error("TASKER_ENDPOINT_URL が未設定です");
+  }
 
-  const message = await twilioClient.messages.create({
-    body: body,
-    from: process.env.TWILIO_PHONE_NUMBER,
-    to: to,
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to, body }),
   });
 
-  console.log(`[SMS] SID: ${message.sid} | To: ${to}`);
-  return message;
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Tasker送信失敗 (${response.status}): ${text}`);
+  }
+
+  console.log(`[SMS] Tasker経由送信 → ${to}`);
+  return response.json();
 }
 
 module.exports = { sendSms };
