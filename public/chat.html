@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>チャット受付</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Cormorant+Garamond:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary: #2C2C2C;
+  --primary-light: #3D3D3D;
+  --accent: #B8977E;
+  --accent-light: #D4C4B0;
+  --accent-glow: rgba(184, 151, 126, 0.15);
+  --bg: #FAFAF8;
+  --bg-chat: #F5F3EF;
+  --white: #FFFFFF;
+  --text: #2C2C2C;
+  --text-light: #8A8A8A;
+  --text-lighter: #B0B0B0;
+  --border: #E8E4DE;
+  --staff-bubble: #FFFFFF;
+  --customer-bubble: #2C2C2C;
+  --customer-text: #FAFAF8;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.08);
+  --radius: 20px;
+  --radius-sm: 12px;
+  --font-size-base: 15px;
+  --font-size-small: 13px;
+  --font-size-time: 11px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  height: 100%;
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--font-size-base);
+  -webkit-font-smoothing: antialiased;
+}
+.chat-container {
+  max-width: 480px;
+  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+}
+.chat-header {
+  background: var(--white);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 10;
+  box-shadow: var(--shadow-sm);
+}
+.salon-logo {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--primary);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; box-shadow: var(--shadow-md);
+}
+.salon-logo span {
+  color: var(--accent);
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 18px; font-weight: 500; letter-spacing: -0.5px;
+}
+.salon-info { flex: 1; min-width: 0; }
+.salon-name {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 17px; font-weight: 500; letter-spacing: 1px;
+  color: var(--primary); line-height: 1.2;
+}
+.salon-status {
+  font-size: var(--font-size-time); color: var(--text-light);
+  display: flex; align-items: center; gap: 5px; margin-top: 2px;
+}
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  display: inline-block;
+}
+.status-dot.online { background: #7BC67E; animation: pulse-dot 2s ease-in-out infinite; }
+.status-dot.offline { background: var(--text-lighter); }
+.status-dot.connecting { background: #F5A623; animation: pulse-dot 1s ease-in-out infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.font-controls { display: flex; gap: 2px; margin-left: auto; }
+.font-btn {
+  width: 32px; height: 32px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--white);
+  color: var(--text); font-size: 14px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center;
+  justify-content: center; transition: all 0.2s;
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+}
+.font-btn:hover { background: var(--accent-glow); border-color: var(--accent); }
+.font-btn:active { transform: scale(0.92); }
+
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 20px 16px;
+  background: var(--bg-chat); scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.message-group { margin-bottom: 16px; animation: msg-in 0.35s cubic-bezier(0.16,1,0.3,1) both; }
+@keyframes msg-in { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+
+.message { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 4px; }
+.message.staff { flex-direction: row; }
+.message.customer { flex-direction: row-reverse; }
+
+.msg-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--primary); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.msg-avatar span {
+  color: var(--accent); font-family: 'Cormorant Garamond', serif;
+  font-size: 11px; font-weight: 500;
+}
+.message.customer .msg-avatar { display: none; }
+
+.bubble {
+  max-width: 78%; padding: 12px 16px;
+  line-height: 1.65; word-break: break-word; position: relative;
+}
+.staff .bubble {
+  background: var(--staff-bubble); color: var(--text);
+  border-radius: var(--radius) var(--radius) var(--radius) 6px;
+  box-shadow: var(--shadow-sm);
+}
+.customer .bubble {
+  background: var(--customer-bubble); color: var(--customer-text);
+  border-radius: var(--radius) var(--radius) 6px var(--radius);
+}
+.msg-time {
+  font-size: var(--font-size-time); color: var(--text-lighter);
+  margin-top: 4px; padding: 0 4px;
+}
+.message.staff .msg-time { text-align: left; }
+.message.customer .msg-time { text-align: right; }
+
+.msg-image { max-width: 200px; border-radius: var(--radius-sm); cursor: pointer; transition: transform 0.2s; }
+.msg-image:hover { transform: scale(1.02); }
+
+.typing-indicator { display: none; padding: 8px 0; }
+.typing-indicator.active { display: block; }
+.typing-dots {
+  display: inline-flex; gap: 4px; padding: 12px 16px;
+  background: var(--staff-bubble);
+  border-radius: var(--radius) var(--radius) var(--radius) 6px;
+  box-shadow: var(--shadow-sm); margin-left: 36px;
+}
+.typing-dots span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-lighter); animation: typing 1.2s ease-in-out infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: .15s; }
+.typing-dots span:nth-child(3) { animation-delay: .3s; }
+@keyframes typing { 0%,60%,100%{transform:translateY(0);opacity:.4} 30%{transform:translateY(-4px);opacity:1} }
+
+.date-sep { text-align: center; margin: 20px 0; position: relative; }
+.date-sep::before { content:''; position:absolute; left:0;right:0;top:50%; border-top:1px solid var(--border); }
+.date-sep span {
+  background: var(--bg-chat); padding: 0 14px;
+  font-size: var(--font-size-time); color: var(--text-lighter);
+  position: relative; letter-spacing: 0.5px;
+}
+
+.chat-input-area {
+  background: var(--white); padding: 12px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border); box-shadow: 0 -2px 10px rgba(0,0,0,0.03);
+}
+.input-row { display: flex; align-items: flex-end; gap: 8px; }
+.input-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.action-btn {
+  width: 38px; height: 38px; border-radius: 50%; border: none;
+  background: transparent; color: var(--text-light); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s; position: relative; overflow: hidden;
+}
+.action-btn:hover { background: var(--accent-glow); color: var(--accent); }
+.action-btn:active { transform: scale(0.9); }
+.action-btn.recording { background: #FF3B30; color: white; animation: rec-pulse 1s ease-in-out infinite; }
+@keyframes rec-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,59,48,.3)} 50%{box-shadow:0 0 0 8px rgba(255,59,48,0)} }
+.action-btn svg { width: 20px; height: 20px; }
+
+.input-wrapper { flex: 1; position: relative; }
+.msg-input {
+  width: 100%; padding: 10px 16px; border-radius: 22px;
+  border: 1.5px solid var(--border); background: var(--bg);
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-size: var(--font-size-base); color: var(--text);
+  outline: none; resize: none; max-height: 120px; min-height: 42px;
+  line-height: 1.5; transition: border-color 0.2s, box-shadow 0.2s;
+}
+.msg-input::placeholder { color: var(--text-lighter); }
+.msg-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+.send-btn {
+  width: 42px; height: 42px; border-radius: 50%; border: none;
+  background: var(--primary); color: var(--white); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s; flex-shrink: 0;
+}
+.send-btn:hover { background: var(--accent); }
+.send-btn:active { transform: scale(0.9); }
+.send-btn:disabled { opacity: 0.3; cursor: default; }
+.send-btn svg { width: 18px; height: 18px; margin-left: 2px; }
+
+.image-preview { display: none; padding: 8px 16px 0; }
+.image-preview.active { display: block; }
+.preview-wrapper { position: relative; display: inline-block; }
+.preview-img { height: 60px; border-radius: 8px; object-fit: cover; }
+.preview-remove {
+  position: absolute; top: -6px; right: -6px; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--primary); color: var(--white);
+  border: none; cursor: pointer; font-size: 12px;
+  display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+#imageInput { display: none; }
+
+.welcome-card {
+  background: var(--white); border-radius: var(--radius);
+  padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow-md);
+  text-align: center; border: 1px solid var(--border);
+}
+.welcome-logo {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: var(--primary); margin: 0 auto 14px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-lg);
+}
+.welcome-logo span {
+  color: var(--accent); font-family: 'Cormorant Garamond', serif;
+  font-size: 26px; font-weight: 400;
+}
+.welcome-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 20px; font-weight: 500; letter-spacing: 2px;
+  margin-bottom: 8px; color: var(--primary);
+}
+.welcome-text { font-size: var(--font-size-small); color: var(--text-light); line-height: 1.7; }
+.welcome-divider { width: 40px; height: 1px; background: var(--accent); margin: 14px auto; }
+
+/* Connection banner */
+.connection-banner {
+  display: none; padding: 8px 16px; text-align: center;
+  font-size: var(--font-size-small); transition: all 0.3s;
+}
+.connection-banner.disconnected { display: block; background: #FFF3CD; color: #856404; }
+.connection-banner.reconnecting { display: block; background: #CCE5FF; color: #004085; }
+
+@media (max-width: 480px) { .chat-container { max-width: 100%; } }
+</style>
+</head>
+<body>
+
+<div class="chat-container">
+  <!-- Connection Banner -->
+  <div class="connection-banner" id="connectionBanner"></div>
+
+  <!-- Header -->
+  <div class="chat-header">
+    <div class="salon-logo"><span>pm</span></div>
+    <div class="salon-info">
+      <div class="salon-name" id="salonName">PREMIER MODELS 中野</div>
+      <div class="salon-status">
+        <span class="status-dot online" id="statusDot"></span>
+        <span id="statusText">チャット受付中</span>
+      </div>
+    </div>
+    <div class="font-controls">
+      <button class="font-btn" onclick="changeFontSize(-1)" title="文字を小さく">A-</button>
+      <button class="font-btn" onclick="changeFontSize(1)" title="文字を大きく">A+</button>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="chat-messages" id="chatMessages">
+    <div class="welcome-card">
+      <div class="welcome-logo"><span>pm</span></div>
+      <div class="welcome-title" id="welcomeTitle">PREMIER MODELS 中野</div>
+      <div class="welcome-divider"></div>
+      <div class="welcome-text">
+        チャットでご予約・ご相談を<br>承っております。<br>お気軽にメッセージをお送りください。
+      </div>
+    </div>
+    <div class="date-sep"><span>今日</span></div>
+    <div class="typing-indicator" id="typingIndicator">
+      <div class="typing-dots"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+
+  <!-- Image Preview -->
+  <div class="image-preview" id="imagePreview">
+    <div class="preview-wrapper">
+      <img class="preview-img" id="previewImg" src="" alt="preview">
+      <button class="preview-remove" onclick="removeImage()">×</button>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="chat-input-area">
+    <div class="input-row">
+      <div class="input-actions">
+        <button class="action-btn" onclick="document.getElementById('imageInput').click()" title="画像を送信">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+          </svg>
+        </button>
+        <button class="action-btn" id="voiceBtn" onclick="toggleVoice()" title="音声入力">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10v1a7 7 0 01-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/>
+          </svg>
+        </button>
+      </div>
+      <div class="input-wrapper">
+        <textarea class="msg-input" id="msgInput" rows="1" placeholder="メッセージを入力..." oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
+      </div>
+      <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+  <input type="file" id="imageInput" accept="image/*" onchange="handleImage(event)">
+</div>
+
+<script>
+// ─── Extract sessionId from URL ───
+const pathParts = window.location.pathname.split('/');
+const SESSION_ID = pathParts[pathParts.length - 1];
+
+// ─── WebSocket Connection ───
+let ws = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT = 10;
+
+function connectWebSocket() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/ws?sessionId=${SESSION_ID}`;
+
+  updateConnectionStatus('connecting');
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    console.log('[WS] Connected');
+    reconnectAttempts = 0;
+    updateConnectionStatus('online');
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      handleServerMessage(data);
+    } catch (err) {
+      console.error('[WS] Parse error:', err);
+    }
+  };
+
+  ws.onclose = (event) => {
+    console.log('[WS] Disconnected:', event.code);
+    updateConnectionStatus('disconnected');
+
+    // Auto reconnect
+    if (reconnectAttempts < MAX_RECONNECT) {
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+      reconnectAttempts++;
+      updateConnectionStatus('reconnecting');
+      setTimeout(connectWebSocket, delay);
+    }
+  };
+
+  ws.onerror = (err) => {
+    console.error('[WS] Error:', err);
+  };
+}
+
+function handleServerMessage(data) {
+  switch (data.type) {
+    case 'message':
+      if (data.message.sender === 'staff') hideTyping();
+      addMessage(data.message.text, data.message.sender, data.message.image);
+      break;
+    case 'history':
+      data.messages.forEach(msg => {
+        addMessage(msg.text, msg.sender, msg.image, msg.timestamp);
+      });
+      break;
+    case 'message_ack':
+      // Message confirmed received by server
+      break;
+    case 'typing':
+      if (data.sender === 'staff') showTyping();
+      break;
+    case 'typing_stop':
+      if (data.sender === 'staff') hideTyping();
+      break;
+  }
+}
+
+function updateConnectionStatus(status) {
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  const banner = document.getElementById('connectionBanner');
+
+  dot.className = 'status-dot';
+  banner.className = 'connection-banner';
+
+  switch (status) {
+    case 'online':
+      dot.classList.add('online');
+      text.textContent = 'チャット受付中';
+      banner.style.display = 'none';
+      break;
+    case 'disconnected':
+      dot.classList.add('offline');
+      text.textContent = '接続が切れました';
+      banner.classList.add('disconnected');
+      banner.textContent = '接続が切れました。再接続を試みています...';
+      break;
+    case 'reconnecting':
+      dot.classList.add('connecting');
+      text.textContent = '再接続中...';
+      banner.classList.add('reconnecting');
+      banner.textContent = '再接続中...';
+      break;
+    case 'connecting':
+      dot.classList.add('connecting');
+      text.textContent = '接続中...';
+      break;
+  }
+}
+
+// ─── Font Size ───
+let fontLevel = 1;
+const fontSizes = [
+  { base: 13, small: 11, time: 10 },
+  { base: 15, small: 13, time: 11 },
+  { base: 17, small: 15, time: 12 },
+  { base: 19, small: 17, time: 13 },
+  { base: 22, small: 19, time: 15 },
+];
+
+function changeFontSize(dir) {
+  fontLevel = Math.max(0, Math.min(fontSizes.length - 1, fontLevel + dir));
+  const s = fontSizes[fontLevel];
+  document.documentElement.style.setProperty('--font-size-base', s.base + 'px');
+  document.documentElement.style.setProperty('--font-size-small', s.small + 'px');
+  document.documentElement.style.setProperty('--font-size-time', s.time + 'px');
+  document.getElementById('msgInput').style.fontSize = s.base + 'px';
+}
+
+// ─── Auto Resize ───
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  document.getElementById('sendBtn').disabled = el.value.trim() === '' && !selectedImage;
+}
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+// ─── Messages ───
+const chatMessages = document.getElementById('chatMessages');
+
+function addMessage(text, type, imageUrl, timestamp) {
+  const group = document.createElement('div');
+  group.className = 'message-group';
+  const msg = document.createElement('div');
+  msg.className = 'message ' + type;
+
+  let inner = '';
+  if (type === 'staff') inner += '<div class="msg-avatar"><span>pm</span></div>';
+
+  const t = timestamp ? new Date(timestamp) : new Date();
+  const time = t.getHours().toString().padStart(2,'0') + ':' + t.getMinutes().toString().padStart(2,'0');
+
+  let bubbleContent = '';
+  if (imageUrl) bubbleContent = '<img class="msg-image" src="' + imageUrl + '" alt="送信画像">';
+  if (text) bubbleContent += (bubbleContent ? '<br>' : '') + escapeHtml(text);
+
+  inner += '<div><div class="bubble">' + bubbleContent + '</div>';
+  inner += '<div class="msg-time">' + time + '</div></div>';
+  msg.innerHTML = inner;
+  group.appendChild(msg);
+
+  // Insert before typing indicator
+  const typing = document.getElementById('typingIndicator');
+  chatMessages.insertBefore(group, typing);
+  scrollToBottom();
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML.replace(/\n/g, '<br>');
+}
+
+function scrollToBottom() {
+  setTimeout(() => { chatMessages.scrollTop = chatMessages.scrollHeight; }, 50);
+}
+
+function showTyping() {
+  document.getElementById('typingIndicator').classList.add('active');
+  scrollToBottom();
+}
+function hideTyping() {
+  document.getElementById('typingIndicator').classList.remove('active');
+}
+
+// ─── Send ───
+let selectedImage = null;
+
+function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text && !selectedImage) return;
+
+  // Show message locally
+  addMessage(text, 'customer', selectedImage);
+
+  // Send via WebSocket
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'message',
+      text: text,
+      image: selectedImage
+    }));
+    showTyping();
+  }
+
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('sendBtn').disabled = true;
+  removeImage();
+}
+
+// ─── Image ───
+function handleImage(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    selectedImage = ev.target.result;
+    document.getElementById('previewImg').src = selectedImage;
+    document.getElementById('imagePreview').classList.add('active');
+    document.getElementById('sendBtn').disabled = false;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+function removeImage() {
+  selectedImage = null;
+  document.getElementById('imagePreview').classList.remove('active');
+  document.getElementById('previewImg').src = '';
+  const input = document.getElementById('msgInput');
+  document.getElementById('sendBtn').disabled = input.value.trim() === '';
+}
+
+// ─── Voice Input ───
+let isRecording = false;
+let recognition = null;
+
+function toggleVoice() {
+  const btn = document.getElementById('voiceBtn');
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    alert('お使いのブラウザは音声入力に対応していません。');
+    return;
+  }
+  if (isRecording) { recognition.stop(); return; }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'ja-JP';
+  recognition.interimResults = true;
+  recognition.continuous = false;
+
+  recognition.onstart = () => { isRecording = true; btn.classList.add('recording'); };
+  recognition.onresult = (e) => {
+    let transcript = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) transcript += e.results[i][0].transcript;
+    document.getElementById('msgInput').value = transcript;
+    autoResize(document.getElementById('msgInput'));
+  };
+  recognition.onend = () => { isRecording = false; btn.classList.remove('recording'); };
+  recognition.onerror = (e) => {
+    isRecording = false; btn.classList.remove('recording');
+    if (e.error !== 'no-speech') console.error('Speech error:', e.error);
+  };
+  recognition.start();
+}
+
+// ─── Load session & connect ───
+async function init() {
+  try {
+    const res = await fetch(`/api/session/${SESSION_ID}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.salonName) {
+        document.getElementById('salonName').textContent = data.salonName;
+        document.getElementById('welcomeTitle').textContent = data.salonName;
+        document.title = data.salonName + ' - チャット';
+      }
+    }
+  } catch (err) {
+    console.log('Session fetch error:', err);
+  }
+
+  connectWebSocket();
+  scrollToBottom();
+}
+
+init();
+</script>
+</body>
+</html>

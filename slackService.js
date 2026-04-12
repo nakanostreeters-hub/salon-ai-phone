@@ -38,45 +38,7 @@ async function notifySlack({ type, from, message }) {
   if (type === "call") {
     await client.chat.postMessage({
       channel: channelId,
-      text: `📞 電話着信: ${from}`,
-      blocks: [
-        {
-          type: "header",
-          text: {
-            type: "plain_text",
-            text: "📞 電話着信",
-          },
-        },
-        {
-          type: "section",
-          fields: [
-            {
-              type: "mrkdwn",
-              text: `*発信元:*\n${from}`,
-            },
-            {
-              type: "mrkdwn",
-              text: `*日時:*\n${now}`,
-            },
-          ],
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: message,
-          },
-        },
-        {
-          type: "context",
-          elements: [
-            {
-              type: "mrkdwn",
-              text: `返信するには: \`reply:${from} ここにメッセージ\``,
-            },
-          ],
-        },
-      ],
+      text: `👤 ${from}（電話）\n${message || "着信あり"}`,
     });
   }
 
@@ -84,45 +46,7 @@ async function notifySlack({ type, from, message }) {
   if (type === "sms") {
     await client.chat.postMessage({
       channel: channelId,
-      text: `💬 SMS受信: ${from}`,
-      blocks: [
-        {
-          type: "header",
-          text: {
-            type: "plain_text",
-            text: "💬 SMS受信",
-          },
-        },
-        {
-          type: "section",
-          fields: [
-            {
-              type: "mrkdwn",
-              text: `*発信元:*\n${from}`,
-            },
-            {
-              type: "mrkdwn",
-              text: `*日時:*\n${now}`,
-            },
-          ],
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*メッセージ:*\n>${message}`,
-          },
-        },
-        {
-          type: "context",
-          elements: [
-            {
-              type: "mrkdwn",
-              text: `返信するには: \`reply:${from} ここにメッセージ\``,
-            },
-          ],
-        },
-      ],
+      text: `👤 ${from}（SMS）\n${message}`,
     });
   }
 }

@@ -8,11 +8,20 @@
     "dev": "node server.js",
     "ai:relay": "node scripts/aiRelay.js"
   },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
+    "@line/bot-sdk": "^11.0.0",
     "@slack/events-api": "^3.0.1",
     "@slack/web-api": "^6.12.0",
+    "@supabase/supabase-js": "^2.101.1",
     "body-parser": "^1.20.2",
+    "csv-parse": "^6.2.1",
     "dotenv": "^16.6.1",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "uuid": "^13.0.0",
+    "ws": "^8.20.0"
   }
 }

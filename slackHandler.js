@@ -94,10 +94,10 @@ async function handleSlackReply(event) {
     try {
       await sendSms(phoneNumber, messageBody);
       console.log(`[SMS送信完了] Slack経由 → ${phoneNumber}`);
-      await postToSlack(event.channel, `✅ SMS送信完了 → ${phoneNumber}`);
+      await postToSlack(event.channel, `💇 スタッフ\nSMS送信完了 → ${phoneNumber}`);
     } catch (error) {
       console.error("[SMS送信エラー]", error.message);
-      await postToSlack(event.channel, `❌ SMS送信失敗: ${error.message}`);
+      await postToSlack(event.channel, `❌ SMS送信失敗\n${error.message}`);
     }
   } else {
     console.log(

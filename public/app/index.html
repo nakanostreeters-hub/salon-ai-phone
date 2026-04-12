@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a1a1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>mycon - my concierge</title>
+  <link rel="manifest" href="/app/manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/app/css/style.css">
+</head>
+<body>
+
+  <!-- ====== Login Page ====== -->
+  <div id="login-page" class="login-page">
+    <div class="login-card">
+      <div class="login-logo">my<span>con</span></div>
+      <div class="login-subtitle">my concierge</div>
+      <form id="login-form">
+        <div id="login-error" class="login-error"></div>
+        <div class="form-group">
+          <label for="login-email">メールアドレス</label>
+          <input type="email" id="login-email" class="form-input" placeholder="you@example.com" required autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="login-password">パスワード</label>
+          <input type="password" id="login-password" class="form-input" placeholder="パスワード" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary">ログイン</button>
+      </form>
+      <div class="login-forgot">
+        <a href="#">パスワードをお忘れですか？</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== App Shell ====== -->
+  <div id="app-shell" class="app-shell">
+
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-logo">my<span>con</span></div>
+      <div class="sidebar-nav">
+        <div class="nav-item active" data-page="chat">
+          <span class="nav-icon">💬</span>
+          <span>チャット</span>
+        </div>
+        <div class="nav-item" data-page="customers">
+          <span class="nav-icon">👥</span>
+          <span>顧客一覧</span>
+        </div>
+        <div class="nav-item" data-page="dashboard">
+          <span class="nav-icon">📊</span>
+          <span>ダッシュボード</span>
+        </div>
+        <div class="nav-item" data-page="settings">
+          <span class="nav-icon">⚙️</span>
+          <span>設定</span>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <div class="user-name">user@example.com</div>
+        <button class="logout-btn">ログアウト</button>
+      </div>
+    </nav>
+
+    <!-- Sidebar Overlay (mobile) -->
+    <div class="sidebar-overlay"></div>
+
+    <!-- Main Area -->
+    <div class="main-area">
+      <div class="page-header">
+        <button class="mobile-menu-btn">&#9776;</button>
+        <div class="page-title" id="page-title">チャット</div>
+        <div></div>
+      </div>
+      <div class="page-content" id="page-content"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/app/js/app.js"></script>
+</body>
+</html>
