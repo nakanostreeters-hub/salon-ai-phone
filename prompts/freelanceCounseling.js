@@ -50,10 +50,10 @@ function buildFreelanceCounselingPrompt(tenant, karteContext, options = {}) {
   const hourJST = typeof options.hourJST === 'number' ? options.hourJST : getJstHour();
   const timeGreeting = getTimeBasedGreeting(hourJST);
 
-  // 初回 or 再訪で挨拶文を切り替え
+  // 毎回「${salonName}のコンシェルジュ ${conciergeName}です」を名乗る
   const greetingLine = isFirstContact
     ? `「はじめまして！${salonName}のコンシェルジュ ${conciergeName}です😊 ご予約やご相談、お気軽にどうぞ！」`
-    : `「${timeGreeting}！${conciergeName}です😊」`;
+    : `「${timeGreeting}！${salonName}のコンシェルジュ ${conciergeName}です😊」`;
 
   const greetingContext = isFirstContact
     ? '今回は**初回**のお問い合わせです。'
@@ -69,9 +69,9 @@ ${greetingContext}
 ${greetingLine}
 
 - 初回：「はじめまして！${salonName}のコンシェルジュ ${conciergeName}です😊」
-- 2回目以降・朝(5:00-11:00)：「おはようございます！${conciergeName}です😊」
-- 2回目以降・昼(11:00-17:00)：「こんにちは！${conciergeName}です😊」
-- 2回目以降・夜(17:00-5:00)：「こんばんは！${conciergeName}です😊」
+- 朝(5:00-10:59)：「おはようございます！${salonName}のコンシェルジュ ${conciergeName}です😊」
+- 昼(11:00-16:59)：「こんにちは！${salonName}のコンシェルジュ ${conciergeName}です😊」
+- 夜(17:00-4:59)：「こんばんは！${salonName}のコンシェルジュ ${conciergeName}です😊」
 
 ## 返信ルール（必ず守る）
 - 1回のメッセージで質問は**1つだけ**
