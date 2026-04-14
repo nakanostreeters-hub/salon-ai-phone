@@ -47,7 +47,7 @@ function getLineClient() {
 
 // Claude Client
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: (process.env.ANTHROPIC_API_KEY || '').trim(),
 });
 
 // Slack Client
@@ -141,25 +141,26 @@ router.post('/', async (req, res) => {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  // カルテくんにリクエストを非同期転送（fire and forget）
-  if (KARUTEKUN_WEBHOOK_URL) {
-    forwardToKarutekun(rawBody, req.headers).catch((err) => {
-      console.error('[LINE Webhook] カルテくん転送エラー:', err.message);
-    });
-  }
-
   // LINEに即座に200を返す
   res.status(200).json({ status: 'ok' });
 
-  // イベント処理（非同期）
+  // デフォルトはフリーランスモード
+  const tenant = getTenant('freelance');
+  if (!tenant) {
+    console.error('[LINE Webhook] デフォルトfreelanceテナントが見つかりません');
+    return;
+  }
+
   const body = req.body;
   if (!body.events || body.events.length === 0) return;
 
+  console.log(`[LINE Webhook] デフォルト → フリーランスモードで処理 (tenant=${tenant.id})`);
+
   for (const event of body.events) {
     try {
-      await handleEvent(event);
+      await handleFreelanceMode(event, tenant);
     } catch (err) {
-      console.error('[LINE Webhook] イベント処理エラー:', err);
+      console.error('[LINE Webhook] フリーランスモード処理エラー:', err);
     }
   }
 });

@@ -2,7 +2,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: (process.env.ANTHROPIC_API_KEY || '').trim(),
 });
 
 const SALON_NAME = process.env.SALON_NAME || 'PREMIER MODELS 中野';

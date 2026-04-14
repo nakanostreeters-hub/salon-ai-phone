@@ -22,6 +22,27 @@ const tenants = {
     closedDays: ['火曜日'],
   },
 
+  // フリーランスモード（デフォルト: /webhook/line や /webhook/line/freelance で使用）
+  // グローバル環境変数から設定を読む
+  'freelance': {
+    id: 'freelance',
+    mode: 'freelance',
+    name: process.env.FREELANCE_SALON_NAME || 'フリーランス',
+    lineChannelId: process.env.LINE_CHANNEL_ID,
+    lineChannelSecret: process.env.LINE_CHANNEL_SECRET,
+    lineChannelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
+    supabaseUrl: process.env.SUPABASE_URL,
+    supabaseKey: process.env.SUPABASE_ANON_KEY,
+    staffList: [],
+    notification: {
+      type: process.env.FREELANCE_NOTIFY_TYPE || 'email',
+      destination: process.env.FREELANCE_NOTIFY_DESTINATION || '',
+    },
+    businessHours: { open: '10:00', close: '20:00' },
+    closedDays: [],
+    karteSource: 'none',
+  },
+
   // フリーランスモードのテンプレート
   // 将来的に管理画面から追加される
   'freelance-template': {

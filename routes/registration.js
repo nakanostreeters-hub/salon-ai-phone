@@ -25,7 +25,7 @@ function getSupabase() {
 let anthropic = null;
 function getAnthropic() {
   if (!anthropic && process.env.ANTHROPIC_API_KEY) {
-    anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY || '').trim() });
   }
   return anthropic;
 }

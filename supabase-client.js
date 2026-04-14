@@ -34,18 +34,30 @@ async function findCustomerByPhone(phone) {
   return data;
 }
 
+// line_id カラムの存在フラグ（初回の検索でスキーマエラーが出たらfalseにして以降スキップ）
+let hasLineIdColumn = true;
+
 // LINE IDで顧客を検索
 async function findCustomerByLineId(lineId) {
   const client = getClient();
   if (!client) return null;
+  if (!hasLineIdColumn) return null;
 
   const { data, error } = await client
     .from('customers')
     .select('*')
     .eq('line_id', lineId)
-    .single();
+    .maybeSingle();
 
   if (error) {
+    // line_id カラムが存在しない場合は以降スキップ
+    if (error.message && error.message.includes('line_id does not exist')) {
+      hasLineIdColumn = false;
+      console.warn('[Supabase] customers.line_id カラム未作成のため LINE ID 検索をスキップします');
+      return null;
+    }
+    // 該当なしは maybeSingle でエラーにならないが、念のため
+    if (error.code === 'PGRST116') return null;
     console.error('[Supabase] 顧客検索エラー (line_id):', error.message);
     return null;
   }
