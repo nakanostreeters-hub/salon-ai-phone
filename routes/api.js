@@ -6,9 +6,19 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const line = require('@line/bot-sdk');
+const Anthropic = require('@anthropic-ai/sdk');
 const { getTenant } = require('../config/tenants');
 
 const router = express.Router();
+
+// ─── Anthropic Client ───
+let anthropicClient = null;
+function getAnthropic() {
+  if (!anthropicClient && process.env.ANTHROPIC_API_KEY) {
+    anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY.trim() });
+  }
+  return anthropicClient;
+}
 
 // ─── Supabase Admin Client（サーバー側） ───
 let supabase = null;
@@ -34,6 +44,58 @@ function getLineClientForTenant(tenant) {
 // ─── ヘルパー: 顧客名を取得 ───
 function getCustomerName(row) {
   return row.customer_name || row.name || '';
+}
+
+// ─── ヘルパー: 経過時間から優先度判定 ───
+function priorityFromAge(lastAt) {
+  const minutes = (Date.now() - new Date(lastAt).getTime()) / 60000;
+  if (minutes <= 60) return { level: 'high', label: '高', minutes: Math.round(minutes) };
+  if (minutes <= 180) return { level: 'medium', label: '中', minutes: Math.round(minutes) };
+  return { level: 'low', label: '低', minutes: Math.round(minutes) };
+}
+
+// ─── ヘルパー: AI返信案を生成 ───
+async function generateReplySuggestion(client, ctx) {
+  const history = (ctx.recentLogs || [])
+    .slice()
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .slice(-8)
+    .map(l => {
+      const isCustomer = l.sender_type === 'customer'
+        || (!l.sender_type && l.customer_message && !/^（.+）$/.test(l.customer_message));
+      const text = (l.message || l.customer_message || l.ai_response || '').trim();
+      if (!text) return null;
+      return { role: isCustomer ? 'user' : 'assistant', content: text };
+    })
+    .filter(Boolean);
+
+  if (history.length === 0 || history[history.length - 1].role !== 'user') {
+    return null;
+  }
+
+  const customerLine = ctx.customerName
+    ? `お客様情報：${ctx.customerName}様`
+    : 'お客様情報：（新規／不明）';
+
+  const system = `あなたは美容室「${process.env.SALON_NAME || 'PREMIER MODELS 中野'}」のスタッフ用AIアシスタントです。
+お客様への返信文の「下書き案」を1つだけ提案してください。
+
+ルール：
+- 1〜2文、丁寧で簡潔に
+- 絵文字・前置き不要、本文のみ
+- 来店日時の確定や個人情報の断定はしない（必要なら確認質問）
+- 「〜いたします」「〜くださいませ」など上品な丁寧語
+
+${customerLine}
+直近の会話履歴を踏まえ、最新のお客様メッセージへの返信案だけを出力してください。`;
+
+  const res = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 200,
+    system,
+    messages: history,
+  });
+  return (res.content?.[0]?.text || '').trim();
 }
 
 // ─── ヘルパー: 来店履歴から施術リスクを判定 ───
@@ -207,6 +269,130 @@ function summarizeConversation(logs) {
     firstAt: sorted[0].created_at,
     lastAt: sorted[sorted.length - 1].created_at,
   };
+}
+
+// ─── ヘルパー: AI提案の検出 (リタッチ/離反/単価UP) ───
+const COLOR_RE = /カラー|ヘアカラー|リタッチ|color/i;
+const CUT_RE = /カット|cut/i;
+const NON_CUT_RE = /カラー|パーマ|縮毛|ストレート|ストパ|トリートメント|スパ|ブリーチ|エクステ/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function detectSuggestions(customer, visits) {
+  const name = getCustomerName(customer) || 'お客様';
+  const now = Date.now();
+  const result = { retouch: null, churn: null, upsell: null };
+
+  const sorted = [...(visits || [])].sort(
+    (a, b) => new Date(b.visited_at) - new Date(a.visited_at)
+  );
+
+  const lastColor = sorted.find(v => COLOR_RE.test(v.menu || ''));
+  if (lastColor) {
+    const days = Math.floor((now - new Date(lastColor.visited_at)) / DAY_MS);
+    if (days >= 45) {
+      result.retouch = {
+        id: customer.id, name, phone: customer.phone, lineId: customer.line_id,
+        daysSince: days,
+        lastColorAt: lastColor.visited_at,
+        lastMenu: lastColor.menu,
+      };
+    }
+  }
+
+  if (sorted.length >= 3) {
+    const intervals = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const d = (new Date(sorted[i].visited_at) - new Date(sorted[i + 1].visited_at)) / DAY_MS;
+      if (d > 0) intervals.push(d);
+    }
+    if (intervals.length) {
+      const mid = intervals.slice().sort((a, b) => a - b);
+      const median = mid[Math.floor(mid.length / 2)];
+      const daysSinceLast = (now - new Date(sorted[0].visited_at)) / DAY_MS;
+      if (median > 0 && daysSinceLast > median * 1.5 && daysSinceLast > 30) {
+        result.churn = {
+          id: customer.id, name, phone: customer.phone, lineId: customer.line_id,
+          daysSince: Math.floor(daysSinceLast),
+          medianInterval: Math.floor(median),
+          ratio: Number((daysSinceLast / median).toFixed(1)),
+        };
+      }
+    }
+  }
+
+  if (sorted.length >= 3) {
+    const cutOnly = sorted.every(v => {
+      const m = v.menu || '';
+      return CUT_RE.test(m) && !NON_CUT_RE.test(m);
+    });
+    if (cutOnly) {
+      const total = sorted.reduce((s, v) => s + (v.total_amount || 0), 0);
+      result.upsell = {
+        id: customer.id, name, phone: customer.phone, lineId: customer.line_id,
+        visitCount: sorted.length,
+        avgSpend: Math.round(total / sorted.length),
+      };
+    }
+  }
+
+  return result;
+}
+
+const suggestionCache = new Map();
+
+function buildSuggestionPrompt(type, s) {
+  const salon = process.env.SALON_NAME || 'PREMIER MODELS 中野';
+  if (type === 'retouch') {
+    return `あなたは美容室「${salon}」のスタッフです。前回カラーから${s.daysSince}日経過したお客様「${s.name}様」に、リタッチ来店を促すLINEメッセージを作成してください。
+条件:
+- 2〜3文、150文字以内
+- 押し付けがましくない、丁寧で温かい口調
+- 根元のリタッチや色持ちに軽く触れる
+- 絵文字は使わない
+メッセージ本文のみ出力（前置き・引用符・署名なし）。`;
+  }
+  if (type === 'churn') {
+    return `あなたは美容室「${salon}」のスタッフです。通常${s.medianInterval}日間隔で来店されていた常連の「${s.name}様」が、前回来店から${s.daysSince}日空いています。気遣いを感じる、さりげない再来店のお誘いLINEを作成してください。
+条件:
+- 2〜3文、150文字以内
+- 営業感を出さず、気にかけている気持ちを伝える
+- お体やご都合を気遣う一言を添える
+- 絵文字は使わない
+メッセージ本文のみ出力（前置き・引用符・署名なし）。`;
+  }
+  return `あなたは美容室「${salon}」のスタッフです。「${s.name}様」は${s.visitCount}回来店の常連ですが、これまでカットのみのご利用です。次回来店時に別メニューも体験いただくきっかけとなるLINEメッセージを作成してください。
+条件:
+- 2〜3文、150文字以内
+- 押し売りにならない、提案・ご相談のトーン
+- 具体的なメニューを1つだけ挙げる（例: トリートメント／カラー）
+- 絵文字は使わない
+メッセージ本文のみ出力（前置き・引用符・署名なし）。`;
+}
+
+async function generateSuggestionMessage(type, s) {
+  const cacheKey = `${type}:${s.id}:${s.daysSince ?? ''}:${s.visitCount ?? ''}`;
+  if (suggestionCache.has(cacheKey)) return suggestionCache.get(cacheKey);
+
+  const client = getAnthropic();
+  if (!client) return null;
+
+  try {
+    const res = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 400,
+      messages: [{ role: 'user', content: buildSuggestionPrompt(type, s) }],
+    });
+    const text = (res.content || [])
+      .filter(b => b.type === 'text')
+      .map(b => b.text)
+      .join('')
+      .trim();
+    suggestionCache.set(cacheKey, text);
+    return text;
+  } catch (err) {
+    console.error('[suggestion generate] error:', err.message);
+    return null;
+  }
 }
 
 // ============================================
@@ -502,11 +688,13 @@ router.get('/customers', authMiddleware, async (req, res) => {
 
     const enriched = customers.map(c => {
       const style = analyzeServiceStyle(logsByCustomer[c.id] || []);
+      const riskFlags = analyzeTreatmentRisks(visitsByCustomer[c.id] || []);
       return {
         ...c,
         last_message_at: lastMsgMap[c.id]?.at || null,
         last_message_text: lastMsgMap[c.id]?.text || null,
         service_style: style,
+        risk_flags: riskFlags,
       };
     });
 
@@ -558,6 +746,7 @@ router.get('/customers/:id', authMiddleware, async (req, res) => {
 
     const serviceStyle = analyzeServiceStyle(conversationLogs);
     const conversationSummary = summarizeConversation(conversationLogs);
+    const riskFlags = analyzeTreatmentRisks(visits || []);
 
     res.json({
       customer,
@@ -566,6 +755,7 @@ router.get('/customers/:id', authMiddleware, async (req, res) => {
       conversationLogs,
       serviceStyle,
       conversationSummary,
+      riskFlags,
     });
   } catch (err) {
     console.error('[API /customers/:id] Error:', err.message);
@@ -802,6 +992,159 @@ router.get('/dashboard/alerts', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('[API /dashboard/alerts] Error:', err.message);
     res.status(500).json({ error: '離反リスクアラートの取得に失敗しました' });
+  }
+});
+
+// GET /api/dashboard/ai-suggestions - 「今すぐ返信すべき人」AI返信案つき
+router.get('/dashboard/ai-suggestions', authMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 5, 10);
+
+    // 直近のログを広めに取得
+    const { data: logs, error } = await req.supabase
+      .from('conversation_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(300);
+    if (error) throw error;
+
+    // line_user_id ごとに最新ログを把握
+    const latestByUser = new Map();
+    const logsByUser = new Map();
+    for (const log of logs || []) {
+      if (!latestByUser.has(log.line_user_id)) {
+        latestByUser.set(log.line_user_id, log);
+      }
+      if (!logsByUser.has(log.line_user_id)) logsByUser.set(log.line_user_id, []);
+      logsByUser.get(log.line_user_id).push(log);
+    }
+
+    // 最新が customer 発信 = まだスタッフ返信がない
+    const candidates = [...latestByUser.values()]
+      .filter(l => {
+        const isCustomer = l.sender_type === 'customer'
+          || (!l.sender_type && l.customer_message && !/^（.+）$/.test(l.customer_message));
+        return isCustomer;
+      })
+      .map(l => ({
+        log: l,
+        priority: priorityFromAge(l.created_at),
+      }))
+      .sort((a, b) => {
+        // 優先度 high > medium > low、同じなら新しい順
+        const order = { high: 0, medium: 1, low: 2 };
+        const d = order[a.priority.level] - order[b.priority.level];
+        if (d !== 0) return d;
+        return new Date(b.log.created_at) - new Date(a.log.created_at);
+      })
+      .slice(0, limit);
+
+    // 顧客名を解決
+    const customerIds = [...new Set(candidates.map(c => c.log.customer_id).filter(Boolean))];
+    let nameMap = {};
+    if (customerIds.length) {
+      const { data: customers } = await req.supabase
+        .from('customers')
+        .select('id, customer_name, name')
+        .in('id', customerIds);
+      if (customers) {
+        nameMap = Object.fromEntries(customers.map(c => [c.id, getCustomerName(c)]));
+      }
+    }
+
+    // AI返信案を並列生成
+    const anthropic = getAnthropic();
+    const results = await Promise.all(candidates.map(async ({ log, priority }) => {
+      const customerName = nameMap[log.customer_id] || null;
+      let aiSuggestion = null;
+      let aiError = null;
+      if (anthropic) {
+        try {
+          aiSuggestion = await generateReplySuggestion(anthropic, {
+            customerName,
+            recentLogs: logsByUser.get(log.line_user_id) || [],
+          });
+        } catch (e) {
+          aiError = e.message || 'AI生成に失敗';
+        }
+      } else {
+        aiError = 'ANTHROPIC_API_KEY 未設定';
+      }
+      return {
+        lineUserId: log.line_user_id,
+        customerId: log.customer_id,
+        customerName,
+        lastMessage: log.message || log.customer_message || '',
+        lastAt: log.created_at,
+        priority,
+        aiSuggestion,
+        aiError,
+      };
+    }));
+
+    res.json({ suggestions: results });
+  } catch (err) {
+    console.error('[API /dashboard/ai-suggestions] Error:', err.message);
+    res.status(500).json({ error: 'AI提案の取得に失敗しました' });
+  }
+});
+
+// GET /api/dashboard/proactive-suggestions - リタッチ／離反／単価UP の先回り提案
+router.get('/dashboard/proactive-suggestions', authMiddleware, async (req, res) => {
+  try {
+    const perType = Math.min(parseInt(req.query.perType, 10) || 5, 10);
+
+    const { data: customers, error: custErr } = await req.supabase
+      .from('customers')
+      .select('id, customer_name, name, phone, line_id, last_visit_at, visit_count')
+      .limit(500);
+    if (custErr) throw custErr;
+
+    const customerIds = (customers || []).map(c => c.id).filter(Boolean);
+    let visitsByCustomer = {};
+    if (customerIds.length) {
+      const { data: visitsAll } = await req.supabase
+        .from('visits')
+        .select('customer_id, menu, visited_at, total_amount')
+        .in('customer_id', customerIds)
+        .order('visited_at', { ascending: false });
+      for (const v of visitsAll || []) {
+        (visitsByCustomer[v.customer_id] = visitsByCustomer[v.customer_id] || []).push(v);
+      }
+    }
+
+    const retouch = [], churn = [], upsell = [];
+    for (const c of customers || []) {
+      const s = detectSuggestions(c, visitsByCustomer[c.id] || []);
+      if (s.retouch) retouch.push(s.retouch);
+      if (s.churn) churn.push(s.churn);
+      if (s.upsell) upsell.push(s.upsell);
+    }
+
+    retouch.sort((a, b) => b.daysSince - a.daysSince);
+    churn.sort((a, b) => b.ratio - a.ratio);
+    upsell.sort((a, b) => b.visitCount - a.visitCount);
+
+    const topRetouch = retouch.slice(0, perType);
+    const topChurn = churn.slice(0, perType);
+    const topUpsell = upsell.slice(0, perType);
+
+    await Promise.all([
+      ...topRetouch.map(async s => { s.message = await generateSuggestionMessage('retouch', s); }),
+      ...topChurn.map(async s => { s.message = await generateSuggestionMessage('churn', s); }),
+      ...topUpsell.map(async s => { s.message = await generateSuggestionMessage('upsell', s); }),
+    ]);
+
+    res.json({
+      retouch: topRetouch,
+      churn: topChurn,
+      upsell: topUpsell,
+      counts: { retouch: retouch.length, churn: churn.length, upsell: upsell.length },
+      aiEnabled: !!getAnthropic(),
+    });
+  } catch (err) {
+    console.error('[API /dashboard/proactive-suggestions] Error:', err.message);
+    res.status(500).json({ error: '先回り提案の取得に失敗しました' });
   }
 });
 

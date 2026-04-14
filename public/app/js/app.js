@@ -8,6 +8,8 @@ import {
   getChats, getChatMessages, sendChatReply,
   getCustomers, getCustomerDetail,
   getDashboard, getDashboardStaff, getDashboardAlerts, getDashboardUnanswered,
+  getDashboardAiSuggestions,
+  getDashboardProactiveSuggestions,
 } from './api.js';
 
 // ─── State ───
@@ -174,6 +176,69 @@ function renderPage(route) {
 function customerName(c) {
   if (!c) return '';
   return c.customer_name || c.name || '';
+}
+
+// ============================================
+// Helper: 施術リスク警告バッジ
+// ============================================
+function renderAiSuggestionCard(s) {
+  const prio = s.priority || { level: 'low', label: '低', minutes: 0 };
+  const prioStyle = prio.level === 'high'
+    ? 'background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;'
+    : prio.level === 'medium'
+      ? 'background:#fef3c7;color:#92400e;border:1px solid #fcd34d;'
+      : 'background:#e5e7eb;color:#4b5563;border:1px solid #d1d5db;';
+  const ago = prio.minutes < 60
+    ? `${prio.minutes}分前`
+    : prio.minutes < 1440
+      ? `${Math.floor(prio.minutes / 60)}時間前`
+      : `${Math.floor(prio.minutes / 1440)}日前`;
+  const name = s.customerName || 'ゲスト';
+  const last = s.lastMessage || '';
+  const draftRaw = s.aiSuggestion || '';
+  const draftDisplay = draftRaw
+    ? escapeHtml(draftRaw)
+    : s.aiError
+      ? `<span style="color:var(--text-muted);font-style:italic;">AI返信案を生成できませんでした（${escapeHtml(s.aiError)}）</span>`
+      : '<span style="color:var(--text-muted);font-style:italic;">返信案なし</span>';
+  const draftAttr = escapeHtml(draftRaw).replace(/"/g, '&quot;');
+  return `
+    <div class="ai-suggestion-card" style="padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;background:var(--bg-card,#fff);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+        <span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;${prioStyle}">優先度 ${escapeHtml(prio.label)}</span>
+        <span style="font-weight:600;">${escapeHtml(name)}</span>
+        <span style="font-size:11px;color:var(--text-muted);">${ago}</span>
+      </div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+        お客様: ${escapeHtml(last)}
+      </div>
+      <div style="font-size:13px;background:#f9fafb;border-left:3px solid #4caf7d;padding:8px 10px;border-radius:4px;margin-bottom:8px;white-space:pre-wrap;">
+        <div style="font-size:10px;color:#4caf7d;font-weight:700;margin-bottom:2px;">AI返信案</div>
+        ${draftDisplay}
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-primary" style="font-size:12px;padding:4px 10px;" data-action="open-chat" data-line-user-id="${escapeHtml(s.lineUserId)}" data-draft="${draftAttr}">チャットを開いて挿入</button>
+        ${draftRaw ? `<button class="btn" style="font-size:12px;padding:4px 10px;" data-action="copy" data-draft="${draftAttr}">コピー</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderRiskBadges(flags) {
+  if (!flags || !flags.warnings || flags.warnings.length === 0) return '';
+  const style = (level) => level === 'danger'
+    ? 'background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;'
+    : 'background:#fef3c7;color:#92400e;border:1px solid #fcd34d;';
+  const icon = (code) => code === 'bleach_damage' ? '💥'
+    : code === 'recent_heavy' ? '⚠️'
+    : code === 'straightening_history' ? '⚡'
+    : '⚠️';
+  return flags.warnings.map(w => `
+    <span title="${escapeHtml(w.text)}"
+      style="display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:600;margin-left:4px;${style(w.level)}">
+      ${icon(w.code)} ${escapeHtml(w.text.length > 14 ? w.text.slice(0, 14) + '…' : w.text)}
+    </span>
+  `).join('');
 }
 
 // ============================================
@@ -633,12 +698,14 @@ async function loadCustomers() {
           <span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${styleColor}22;color:${styleColor};font-size:12px;font-weight:600;width:fit-content;">${escapeHtml(style.label)}</span>
           ${style.advice ? `<span style="font-size:11px;color:var(--text-muted);">${escapeHtml(style.advice)}</span>` : ''}
         </div>`;
+      const riskBadges = renderRiskBadges(c.risk_flags);
       return `
         <tr data-customer-id="${c.id}">
           <td>
             <div class="customer-name-cell">
               <div class="customer-avatar-sm">${initial}</div>
               <span>${escapeHtml(name)}</span>
+              ${riskBadges}
             </div>
           </td>
           <td>${escapeHtml(c.phone || '-')}</td>
@@ -776,9 +843,28 @@ async function renderDashboardPage() {
         <div class="kpi-card"><div class="kpi-label">月間売上</div><div class="kpi-value">-</div></div>
         <div class="kpi-card"><div class="kpi-label">顧客数</div><div class="kpi-value">-</div></div>
       </div>
+      <div class="dashboard-panel" id="ai-suggestions-panel" style="margin-bottom:16px;">
+        <div class="dashboard-panel-title">
+          <span>今すぐ返信すべき人</span>
+          <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px;">AI が返信案を生成しています</span>
+        </div>
+        <div id="ai-suggestions-wrap"><div class="loading"><span class="spinner"></span></div></div>
+      </div>
       <div class="dashboard-panel" id="unanswered-panel" style="margin-bottom:16px;">
         <div class="dashboard-panel-title">未対応メッセージ</div>
         <div id="unanswered-wrap"><div class="loading"><span class="spinner"></span></div></div>
+      </div>
+      <div class="dashboard-panel" id="proactive-panel" style="margin-bottom:16px;">
+        <div class="dashboard-panel-title">
+          <span>AIからの提案</span>
+          <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px;">リタッチ・離反・単価UP を自動検出</span>
+        </div>
+        <div class="proactive-tabs" id="proactive-tabs" style="display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--border);">
+          <button class="proactive-tab active" data-tab="retouch" style="padding:8px 14px;border:0;background:transparent;cursor:pointer;font-size:13px;font-weight:600;border-bottom:2px solid transparent;">リタッチ提案 <span class="pt-count" data-tab-count="retouch">-</span></button>
+          <button class="proactive-tab" data-tab="churn" style="padding:8px 14px;border:0;background:transparent;cursor:pointer;font-size:13px;font-weight:500;border-bottom:2px solid transparent;color:var(--text-muted);">離反リスク <span class="pt-count" data-tab-count="churn">-</span></button>
+          <button class="proactive-tab" data-tab="upsell" style="padding:8px 14px;border:0;background:transparent;cursor:pointer;font-size:13px;font-weight:500;border-bottom:2px solid transparent;color:var(--text-muted);">単価UPチャンス <span class="pt-count" data-tab-count="upsell">-</span></button>
+        </div>
+        <div id="proactive-wrap"><div class="loading"><span class="spinner"></span></div></div>
       </div>
       <div class="segment-bar-wrap" id="segment-bar-wrap">
         <div class="segment-bar-title">セグメント分布</div>
@@ -798,12 +884,57 @@ async function renderDashboardPage() {
     </div>
   `;
 
-  const [kpiRes, staffRes, alertsRes, unansweredRes] = await Promise.allSettled([
+  const [kpiRes, staffRes, alertsRes, unansweredRes, suggestionsRes, proactiveRes] = await Promise.allSettled([
     getDashboard(),
     getDashboardStaff(),
     getDashboardAlerts(),
     getDashboardUnanswered(),
+    getDashboardAiSuggestions(),
+    getDashboardProactiveSuggestions(),
   ]);
+
+  // AI 返信案
+  const aiWrap = document.getElementById('ai-suggestions-wrap');
+  if (aiWrap) {
+    if (suggestionsRes.status !== 'fulfilled') {
+      aiWrap.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">AI提案の取得に失敗しました</div>';
+    } else {
+      const items = suggestionsRes.value.suggestions || [];
+      if (items.length === 0) {
+        aiWrap.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">返信が必要なお客様はいません</div>';
+      } else {
+        aiWrap.innerHTML = items.map(s => renderAiSuggestionCard(s)).join('');
+        aiWrap.querySelectorAll('[data-action="open-chat"]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const lineUserId = btn.dataset.lineUserId;
+            const draft = btn.dataset.draft || '';
+            window.location.hash = '#/chats';
+            setTimeout(() => {
+              openChat(lineUserId);
+              setTimeout(() => {
+                const input = document.getElementById('chat-input');
+                if (input && draft) {
+                  input.value = draft;
+                  input.focus();
+                }
+              }, 300);
+            }, 100);
+          });
+        });
+        aiWrap.querySelectorAll('[data-action="copy"]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const text = btn.dataset.draft || '';
+            try {
+              await navigator.clipboard.writeText(text);
+              const orig = btn.textContent;
+              btn.textContent = 'コピーしました';
+              setTimeout(() => { btn.textContent = orig; }, 1500);
+            } catch {}
+          });
+        });
+      }
+    }
+  }
 
   // KPI
   if (kpiRes.status === 'fulfilled') {
@@ -904,6 +1035,98 @@ async function renderDashboardPage() {
       }
     }
   }
+
+  // Proactive suggestions (retouch / churn / upsell)
+  if (proactiveRes.status === 'fulfilled') {
+    renderProactiveSuggestions(proactiveRes.value);
+  } else {
+    const wrap = document.getElementById('proactive-wrap');
+    if (wrap) wrap.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">AI提案の取得に失敗しました</div>';
+  }
+}
+
+function renderProactiveSuggestions(data) {
+  const tabs = document.getElementById('proactive-tabs');
+  const wrap = document.getElementById('proactive-wrap');
+  if (!tabs || !wrap) return;
+
+  const counts = data.counts || {};
+  ['retouch', 'churn', 'upsell'].forEach(t => {
+    const el = tabs.querySelector(`[data-tab-count="${t}"]`);
+    if (el) el.textContent = counts[t] ?? 0;
+  });
+
+  const state = { tab: 'retouch' };
+  const draw = () => {
+    tabs.querySelectorAll('.proactive-tab').forEach(btn => {
+      const active = btn.dataset.tab === state.tab;
+      btn.classList.toggle('active', active);
+      btn.style.borderBottomColor = active ? 'var(--accent, #111)' : 'transparent';
+      btn.style.color = active ? '' : 'var(--text-muted)';
+      btn.style.fontWeight = active ? '600' : '500';
+    });
+    const items = data[state.tab] || [];
+    if (items.length === 0) {
+      const empty = {
+        retouch: 'リタッチ提案対象のお客様はいません',
+        churn: '離反リスクのお客様はいません',
+        upsell: '単価UPチャンス対象のお客様はいません',
+      }[state.tab];
+      wrap.innerHTML = `<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">${empty}</div>`;
+      return;
+    }
+    wrap.innerHTML = items.map(s => renderProactiveCard(state.tab, s)).join('');
+    wrap.querySelectorAll('[data-action="copy-proactive"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const text = btn.dataset.message || '';
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = btn.textContent;
+          btn.textContent = 'コピーしました';
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        } catch {}
+      });
+    });
+    wrap.querySelectorAll('[data-action="open-customer"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.customerId;
+        if (id) openCustomerDetail(id);
+      });
+    });
+  };
+
+  tabs.querySelectorAll('.proactive-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.tab = btn.dataset.tab;
+      draw();
+    });
+  });
+
+  draw();
+}
+
+function renderProactiveCard(type, s) {
+  const badge = {
+    retouch: { label: `前回カラーから${s.daysSince}日`, color: '#e8a840' },
+    churn: { label: `通常${s.medianInterval}日間隔 → ${s.daysSince}日経過 (${s.ratio}倍)`, color: '#d94f4f' },
+    upsell: { label: `カットのみ${s.visitCount}回来店`, color: '#5b9bd5' },
+  }[type];
+  const msg = s.message || '（メッセージ生成中／ANTHROPIC_API_KEY 未設定）';
+  const hasMsg = !!s.message;
+  return `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;background:#fff;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+        <span style="font-weight:600;font-size:14px;">${escapeHtml(s.name)}様</span>
+        <span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${badge.color}22;color:${badge.color};font-size:11px;font-weight:600;">${escapeHtml(badge.label)}</span>
+      </div>
+      <div style="background:#f7f7f7;border-radius:6px;padding:10px;font-size:13px;line-height:1.6;white-space:pre-wrap;color:${hasMsg ? 'var(--text)' : 'var(--text-muted)'};margin-bottom:8px;">${escapeHtml(msg)}</div>
+      <div style="display:flex;gap:8px;">
+        <button data-action="copy-proactive" data-message="${escapeHtml(msg)}" ${hasMsg ? '' : 'disabled'} style="padding:6px 12px;font-size:12px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:${hasMsg ? 'pointer' : 'not-allowed'};">メッセージをコピー</button>
+        <button data-action="open-customer" data-customer-id="${escapeHtml(s.id)}" style="padding:6px 12px;font-size:12px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer;">顧客詳細</button>
+      </div>
+    </div>
+  `;
 }
 
 const SEGMENT_COLORS = {

@@ -115,10 +115,20 @@ async function getDashboardUnanswered() {
   return apiFetch('/dashboard/unanswered');
 }
 
+async function getDashboardAiSuggestions() {
+  return apiFetch('/dashboard/ai-suggestions');
+}
+
+async function getDashboardProactiveSuggestions() {
+  return apiFetch('/dashboard/proactive-suggestions');
+}
+
 export {
   getToken, setToken, clearToken, getUser, setUser,
   login, logout,
   getChats, getChatMessages, sendChatReply,
   getCustomers, getCustomerDetail,
   getDashboard, getDashboardStaff, getDashboardAlerts, getDashboardUnanswered,
+  getDashboardAiSuggestions,
+  getDashboardProactiveSuggestions,
 };
