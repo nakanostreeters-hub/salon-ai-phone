@@ -751,6 +751,8 @@ async function handleFreelanceMode(event, tenant) {
       customerMessage: userMessage,
       aiResponse: cleanResponse,
       isHandoff: needsHandoff,
+      messageType: isImage ? 'image' : 'text',
+      imageUrl: imageUrl,
       timestamp: new Date(),
     });
 
