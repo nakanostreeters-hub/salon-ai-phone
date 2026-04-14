@@ -20,7 +20,7 @@ const { buildLineCounselingPrompt } = require('../prompts/lineCounseling');
 const { buildFreelanceCounselingPrompt } = require('../prompts/freelanceCounseling');
 const { findStaffByName } = require('../config/staff');
 const { getTenant } = require('../config/tenants');
-const { getCustomerProfile, saveConversationLog } = require('../supabase-client');
+const { getCustomerProfile, saveConversationLog, uploadImageToStorage } = require('../supabase-client');
 const { buildKarteContext } = require('../ai-receptionist');
 const { CHANNEL_ALL, CHANNEL_NEW, getChannelForStylist } = require('../config/slackChannels');
 
@@ -71,6 +71,7 @@ function shouldSkipSlack(session) {
 
 // ─── テナント別 LINE Client キャッシュ ───
 const tenantLineClients = new Map();
+const tenantLineBlobClients = new Map();
 
 function getTenantLineClient(tenant) {
   if (!tenant || !tenant.lineChannelAccessToken) return null;
@@ -81,6 +82,43 @@ function getTenantLineClient(tenant) {
   });
   tenantLineClients.set(tenant.id, client);
   return client;
+}
+
+function getTenantLineBlobClient(tenant) {
+  if (!tenant || !tenant.lineChannelAccessToken) return null;
+  if (tenantLineBlobClients.has(tenant.id)) return tenantLineBlobClients.get(tenant.id);
+
+  const blob = new line.messagingApiBlob.MessagingApiBlobClient({
+    channelAccessToken: tenant.lineChannelAccessToken,
+  });
+  tenantLineBlobClients.set(tenant.id, blob);
+  return blob;
+}
+
+// LINEから画像データを取得してSupabase Storageにアップロード
+async function downloadLineImageAndUpload(messageId, tenant, userId) {
+  const blob = getTenantLineBlobClient(tenant);
+  if (!blob) {
+    console.warn('[LINE Image] Blobクライアント未設定');
+    return null;
+  }
+
+  try {
+    const stream = await blob.getMessageContent(messageId);
+    const chunks = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+
+    const filename = `${tenant.id}/${userId}/${Date.now()}_${messageId}.jpg`;
+    const url = await uploadImageToStorage(buffer, filename, 'image/jpeg');
+    console.log(`[LINE Image] アップロード完了: ${url}`);
+    return url;
+  } catch (err) {
+    console.error('[LINE Image] 取得/アップロード失敗:', err.message);
+    return null;
+  }
 }
 
 // ─── Slackスレッド → LINE userId マッピング ───
@@ -612,13 +650,25 @@ async function forwardToKarutekunWithUrl(rawBody, headers, webhookUrl) {
 // フリーランスモード処理
 // ============================================
 async function handleFreelanceMode(event, tenant) {
-  if (event.type !== 'message' || event.message.type !== 'text') {
+  if (event.type !== 'message') return;
+  if (event.message.type !== 'text' && event.message.type !== 'image') {
     return;
   }
 
   const userId = event.source.userId;
-  const userMessage = event.message.text;
   const replyToken = event.replyToken;
+  const isImage = event.message.type === 'image';
+
+  // 画像の場合はLINEから取得してStorageにアップロード
+  let imageUrl = null;
+  if (isImage) {
+    imageUrl = await downloadLineImageAndUpload(event.message.id, tenant, userId);
+  }
+
+  // AIに渡すメッセージテキスト
+  const userMessage = isImage
+    ? 'お客様が参考画像を送りました'
+    : event.message.text;
 
   console.log(`[Freelance] メッセージ受信: tenant=${tenant.id}, userId=${userId}`);
 
@@ -669,6 +719,8 @@ async function handleFreelanceMode(event, tenant) {
       lineUserId: userId,
       customerMessage: userMessage,
       aiResponse: '（引き継ぎ済み・オーナー対応中）',
+      messageType: isImage ? 'image' : 'text',
+      imageUrl: imageUrl,
       timestamp: new Date(),
     });
     return;

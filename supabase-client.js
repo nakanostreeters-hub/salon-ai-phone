@@ -150,6 +150,10 @@ async function saveConversationLog(logData) {
   if (logData.senderType) row.sender_type = logData.senderType;
   if (logData.message) row.message = logData.message;
 
+  // 画像メッセージ対応
+  if (logData.messageType) row.message_type = logData.messageType;
+  if (logData.imageUrl) row.image_url = logData.imageUrl;
+
   const { data, error } = await client
     .from('conversation_logs')
     .insert(row);
@@ -161,6 +165,32 @@ async function saveConversationLog(logData) {
   return data;
 }
 
+// ============================================
+// 画像アップロード（mycon-images バケット）
+// ============================================
+async function uploadImageToStorage(buffer, filename, contentType = 'image/jpeg') {
+  const client = getClient();
+  if (!client) {
+    console.warn('[Storage] Supabase未接続 - アップロードスキップ');
+    return null;
+  }
+
+  const { error } = await client.storage
+    .from('mycon-images')
+    .upload(filename, buffer, {
+      contentType,
+      upsert: false,
+    });
+
+  if (error) {
+    console.error('[Storage] アップロードエラー:', error.message);
+    return null;
+  }
+
+  const { data } = client.storage.from('mycon-images').getPublicUrl(filename);
+  return data?.publicUrl || null;
+}
+
 module.exports = {
   findCustomerByPhone,
   findCustomerByLineId,
@@ -168,4 +198,5 @@ module.exports = {
   getRecentPurchases,
   getCustomerProfile,
   saveConversationLog,
+  uploadImageToStorage,
 };

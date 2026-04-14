@@ -7,7 +7,7 @@ import {
   getToken, getUser, login, logout,
   getChats, getChatMessages, sendChatReply,
   getCustomers, getCustomerDetail,
-  getDashboard, getDashboardStaff, getDashboardAlerts,
+  getDashboard, getDashboardStaff, getDashboardAlerts, getDashboardUnanswered,
 } from './api.js';
 
 // ─── State ───
@@ -547,7 +547,7 @@ async function renderCustomersPage() {
               <th data-sort="phone">電話番号</th>
               <th data-sort="segment">セグメント</th>
               <th data-sort="last_visit_at">最終来店</th>
-              <th data-sort="visit_count">来店回数</th>
+              <th>最終メッセージ</th>
             </tr>
           </thead>
           <tbody id="customer-tbody">
@@ -622,6 +622,9 @@ async function loadCustomers() {
       const name = customerName(c) || '-';
       const initial = name.charAt(0);
       const lastVisit = c.last_visit_at ? c.last_visit_at.split('T')[0] : '-';
+      const lastMsg = c.last_message_text
+        ? `<span style="color:var(--text-muted);font-size:12px;">${formatTime(c.last_message_at)}</span><br><span style="font-size:13px;">${escapeHtml((c.last_message_text || '').slice(0, 30))}</span>`
+        : '<span style="color:var(--text-muted);font-size:12px;">-</span>';
       return `
         <tr data-customer-id="${c.id}">
           <td>
@@ -633,7 +636,7 @@ async function loadCustomers() {
           <td>${escapeHtml(c.phone || '-')}</td>
           <td><span class="segment-tag ${c.segment || ''}">${segmentLabel(c.segment)}</span></td>
           <td>${lastVisit}</td>
-          <td>${c.visit_count || 0}</td>
+          <td>${lastMsg}</td>
         </tr>
       `;
     }).join('');
@@ -712,10 +715,14 @@ async function renderDashboardPage() {
   $content.innerHTML = `
     <div class="dashboard-page">
       <div class="kpi-grid" id="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label">本日の問い合わせ</div><div class="kpi-value">-</div></div>
         <div class="kpi-card"><div class="kpi-label">本日来店</div><div class="kpi-value">-</div></div>
-        <div class="kpi-card"><div class="kpi-label">本日売上</div><div class="kpi-value">-</div></div>
         <div class="kpi-card"><div class="kpi-label">月間売上</div><div class="kpi-value">-</div></div>
         <div class="kpi-card"><div class="kpi-label">顧客数</div><div class="kpi-value">-</div></div>
+      </div>
+      <div class="dashboard-panel" id="unanswered-panel" style="margin-bottom:16px;">
+        <div class="dashboard-panel-title">未対応メッセージ</div>
+        <div id="unanswered-wrap"><div class="loading"><span class="spinner"></span></div></div>
       </div>
       <div class="segment-bar-wrap" id="segment-bar-wrap">
         <div class="segment-bar-title">セグメント分布</div>
@@ -735,10 +742,11 @@ async function renderDashboardPage() {
     </div>
   `;
 
-  const [kpiRes, staffRes, alertsRes] = await Promise.allSettled([
+  const [kpiRes, staffRes, alertsRes, unansweredRes] = await Promise.allSettled([
     getDashboard(),
     getDashboardStaff(),
     getDashboardAlerts(),
+    getDashboardUnanswered(),
   ]);
 
   // KPI
@@ -747,10 +755,10 @@ async function renderDashboardPage() {
     const grid = document.getElementById('kpi-grid');
     if (grid) {
       grid.innerHTML = `
-        <div class="kpi-card"><div class="kpi-label">本日来店</div><div class="kpi-value">${kpi.todayVisits}<span class="kpi-unit"> 人</span></div></div>
-        <div class="kpi-card"><div class="kpi-label">本日売上</div><div class="kpi-value">&yen;${(kpi.todaySales || 0).toLocaleString()}</div></div>
+        <div class="kpi-card"><div class="kpi-label">本日の問い合わせ</div><div class="kpi-value">${kpi.todayInquiries || 0}<span class="kpi-unit"> 件</span></div></div>
+        <div class="kpi-card"><div class="kpi-label">本日来店</div><div class="kpi-value">${kpi.todayVisits || 0}<span class="kpi-unit"> 人</span></div></div>
         <div class="kpi-card"><div class="kpi-label">月間売上</div><div class="kpi-value">&yen;${(kpi.monthSales || 0).toLocaleString()}</div></div>
-        <div class="kpi-card"><div class="kpi-label">顧客数</div><div class="kpi-value">${kpi.totalCustomers}<span class="kpi-unit"> 人</span></div></div>
+        <div class="kpi-card"><div class="kpi-label">顧客数</div><div class="kpi-value">${kpi.totalCustomers || 0}<span class="kpi-unit"> 人</span></div></div>
       `;
     }
     renderSegmentBar(kpi.segments || {});
@@ -778,6 +786,36 @@ async function renderDashboardPage() {
             </tbody>
           </table>
         `;
+      }
+    }
+  }
+
+  // Unanswered messages
+  if (unansweredRes.status === 'fulfilled') {
+    const items = unansweredRes.value.unanswered || [];
+    const wrap = document.getElementById('unanswered-wrap');
+    if (wrap) {
+      if (items.length === 0) {
+        wrap.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">未対応メッセージはありません</div>';
+      } else {
+        wrap.innerHTML = `
+          <ul class="alert-list">
+            ${items.map(u => `
+              <li class="alert-item" data-line-user-id="${escapeHtml(u.lineUserId)}" style="cursor:pointer;">
+                <span class="alert-dot" style="background:#d94f4f;"></span>
+                <span class="alert-item-name">${escapeHtml(u.customerName || 'ゲスト')}</span>
+                <span class="alert-item-detail" style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(u.lastMessage || '')}</span>
+                <span class="alert-item-detail">${formatTime(u.lastAt)}</span>
+              </li>
+            `).join('')}
+          </ul>
+        `;
+        wrap.querySelectorAll('[data-line-user-id]').forEach(el => {
+          el.addEventListener('click', () => {
+            window.location.hash = '#/chats';
+            setTimeout(() => openChat(el.dataset.lineUserId), 100);
+          });
+        });
       }
     }
   }
