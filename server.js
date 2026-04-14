@@ -20,6 +20,7 @@ const { getCustomerProfile } = require("./supabase-client");
 const lineWebhookRouter = require("./routes/line");
 const { handleSlackReplyToLine, threadToLineUser } = require("./routes/line");
 const apiRouter = require("./routes/api");
+const registrationRouter = require("./routes/registration");
 
 // カルテデータ読み込み
 const karteLookup = new KarteLookup();
@@ -51,12 +52,13 @@ const chatSessions = new Map();
 // Slack署名検証用にrawBodyを保存
 app.use(
   bodyParser.json({
+    limit: '50mb',
     verify: (req, _res, buf) => {
       req.rawBody = buf.toString();
     },
   })
 );
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ============================================
@@ -96,6 +98,9 @@ app.use("/webhook/line", lineWebhookRouter);
 
 // --- mycon 管理画面 API ---
 app.use("/api", apiRouter);
+
+// --- 顧客カルテ登録 API ---
+app.use("/api/registration", registrationRouter);
 
 // --- mycon 管理画面 静的ファイル ---
 app.use("/app", express.static(path.join(__dirname, "public", "app")));
@@ -426,7 +431,15 @@ wss.on("connection", (ws, req) => {
 });
 
 // ─── Chat → Slack ───
+function isSlackConfigured() {
+  return !!(process.env.SLACK_BOT_TOKEN && CHAT_SLACK_CHANNEL);
+}
+
 async function forwardToSlack(sessionId, session, message) {
+  if (!isSlackConfigured()) {
+    console.log("[Chat Slack] Slack未設定のためスキップ");
+    return;
+  }
   try {
     const text = message.image
       ? `📷 [画像送信]\n${message.text || ""}`
@@ -453,6 +466,7 @@ async function forwardToSlack(sessionId, session, message) {
 }
 
 async function notifyChatSlack(session, notification) {
+  if (!isSlackConfigured()) return;
   try {
     if (session.slackThreadTs) {
       await slackWeb.chat.postMessage({

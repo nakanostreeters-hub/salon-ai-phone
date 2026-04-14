@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>顧客カルテ登録</title>
+<style>
+  :root {
+    --bg: #fff;
+    --surface: #fff;
+    --text: #222;
+    --muted: #888;
+    --border: #ddd;
+    --accent: #e91e63;
+    --accent-text: #fff;
+    --radius: 12px;
+    --font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  }
+  /* cute */
+  body[data-theme="cute"] {
+    --bg: #fff5f7;
+    --surface: #fff;
+    --text: #5a3a47;
+    --muted: #b38a9a;
+    --border: #fcd5de;
+    --accent: #ff6fa8;
+    --radius: 20px;
+    --font: "Hiragino Maru Gothic ProN", "Quicksand", sans-serif;
+  }
+  /* elegant */
+  body[data-theme="elegant"] {
+    --bg: #faf7f2;
+    --surface: #fff;
+    --text: #3d2e1f;
+    --muted: #9a8770;
+    --border: #e6dccb;
+    --accent: #b08d4a;
+    --radius: 4px;
+    --font: "Hiragino Mincho ProN", "Noto Serif JP", serif;
+  }
+  /* cool */
+  body[data-theme="cool"] {
+    --bg: #0e141b;
+    --surface: #1a2330;
+    --text: #e8ecf1;
+    --muted: #7b8a9c;
+    --border: #2b3848;
+    --accent: #4fc3f7;
+    --accent-text: #0e141b;
+    --radius: 6px;
+  }
+  /* natural */
+  body[data-theme="natural"] {
+    --bg: #f4f1ea;
+    --surface: #fbf9f4;
+    --text: #3a3a2e;
+    --muted: #8a8672;
+    --border: #d8d2c1;
+    --accent: #7a8c5a;
+    --radius: 10px;
+  }
+  /* simple */
+  body[data-theme="simple"] {
+    --bg: #fafafa;
+    --surface: #fff;
+    --text: #222;
+    --muted: #888;
+    --border: #e0e0e0;
+    --accent: #333;
+    --radius: 4px;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+  }
+  .container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+  header {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0 0 12px;
+  }
+  .theme-switcher {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .theme-btn {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: var(--radius);
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .theme-btn.active {
+    background: var(--accent);
+    color: var(--accent-text, #fff);
+    border-color: var(--accent);
+  }
+  .mode-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .mode-tab {
+    flex: 1;
+    padding: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: var(--radius);
+    font-size: 14px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .mode-tab.active {
+    background: var(--accent);
+    color: var(--accent-text, #fff);
+    border-color: var(--accent);
+  }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .camera-area {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 40px 20px;
+    text-align: center;
+    background: var(--surface);
+    margin-bottom: 20px;
+  }
+  .camera-area p {
+    color: var(--muted);
+    margin: 0 0 16px;
+    font-size: 14px;
+  }
+  .camera-btn {
+    display: inline-block;
+    padding: 14px 28px;
+    background: var(--accent);
+    color: var(--accent-text, #fff);
+    border-radius: var(--radius);
+    font-size: 16px;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+  }
+  .camera-btn input { display: none; }
+
+  .field {
+    margin-bottom: 14px;
+  }
+  .field label {
+    display: block;
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .field label .required {
+    color: #e53935;
+    margin-left: 4px;
+  }
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 15px;
+    font-family: inherit;
+  }
+  .field textarea { min-height: 80px; resize: vertical; }
+
+  .submit-btn {
+    width: 100%;
+    padding: 16px;
+    background: var(--accent);
+    color: var(--accent-text, #fff);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 12px;
+    font-family: inherit;
+  }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .status {
+    padding: 12px;
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    font-size: 14px;
+    text-align: center;
+  }
+  .status.info { background: rgba(100, 150, 255, 0.1); color: var(--text); }
+  .status.success { background: rgba(80, 200, 120, 0.15); color: #2e7d32; }
+  .status.error { background: rgba(255, 80, 80, 0.15); color: #c62828; }
+  .status.hidden { display: none; }
+
+  .loading {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .progress {
+    width: 100%;
+    height: 8px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 10px;
+  }
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+  .progress-bar.indeterminate {
+    width: 40%;
+    animation: indet 1.2s ease-in-out infinite;
+  }
+  @keyframes indet {
+    0% { margin-left: -40%; }
+    100% { margin-left: 100%; }
+  }
+</style>
+</head>
+<body data-theme="simple">
+<div class="container">
+  <header>
+    <h1>顧客カルテ登録</h1>
+    <div class="theme-switcher">
+      <button class="theme-btn" data-theme="cute">Cute</button>
+      <button class="theme-btn" data-theme="elegant">Elegant</button>
+      <button class="theme-btn" data-theme="cool">Cool</button>
+      <button class="theme-btn" data-theme="natural">Natural</button>
+      <button class="theme-btn active" data-theme="simple">Simple</button>
+    </div>
+  </header>
+
+  <div class="mode-tabs">
+    <button class="mode-tab active" data-mode="photo">📷 カメラ撮影</button>
+    <button class="mode-tab" data-mode="manual">✏️ 手入力</button>
+  </div>
+
+  <div id="status" class="status hidden"></div>
+
+  <div class="panel active" id="panel-photo">
+    <div class="camera-area">
+      <p>カルテを撮影するとAIが自動で読み取ります<br>（端末には保存されません）</p>
+      <label class="camera-btn">
+        📷 カメラを起動
+        <input type="file" id="photoInput" accept="image/*" capture="environment">
+      </label>
+    </div>
+  </div>
+
+  <form id="form" autocomplete="off">
+    <div class="field">
+      <label>お名前<span class="required">*</span></label>
+      <input type="text" name="name" required>
+    </div>
+    <div class="field">
+      <label>電話番号<span class="required">*</span></label>
+      <input type="tel" name="phone" required placeholder="09012345678">
+    </div>
+    <div class="field">
+      <label>LINE名</label>
+      <input type="text" name="lineName">
+    </div>
+    <div class="field">
+      <label>施術内容</label>
+      <input type="text" name="treatment" placeholder="カット / カラー / パーマ">
+    </div>
+    <div class="field">
+      <label>使用薬剤</label>
+      <input type="text" name="chemical">
+    </div>
+    <div class="field">
+      <label>来店周期</label>
+      <input type="text" name="cycle" placeholder="2ヶ月">
+    </div>
+    <div class="field">
+      <label>性別</label>
+      <select name="gender">
+        <option value="">選択</option>
+        <option value="女性">女性</option>
+        <option value="男性">男性</option>
+        <option value="その他">その他</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>年代</label>
+      <select name="age">
+        <option value="">選択</option>
+        <option value="10代">10代</option>
+        <option value="20代">20代</option>
+        <option value="30代">30代</option>
+        <option value="40代">40代</option>
+        <option value="50代">50代</option>
+        <option value="60代以上">60代以上</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>担当スタイリスト</label>
+      <input type="text" name="stylist">
+    </div>
+    <div class="field">
+      <label>メモ</label>
+      <textarea name="memo"></textarea>
+    </div>
+    <button type="submit" class="submit-btn" id="submitBtn">登録する</button>
+  </form>
+</div>
+
+<script>
+  const body = document.body;
+  const statusEl = document.getElementById('status');
+  const form = document.getElementById('form');
+  const submitBtn = document.getElementById('submitBtn');
+  const photoInput = document.getElementById('photoInput');
+
+  // テーマ切替
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const theme = btn.dataset.theme;
+      body.setAttribute('data-theme', theme);
+      document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b === btn));
+      localStorage.setItem('registration-theme', theme);
+    });
+  });
+  const savedTheme = localStorage.getItem('registration-theme');
+  if (savedTheme) {
+    body.setAttribute('data-theme', savedTheme);
+    document.querySelectorAll('.theme-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.theme === savedTheme);
+    });
+  }
+
+  // モードタブ
+  document.querySelectorAll('.mode-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const mode = tab.dataset.mode;
+      document.querySelectorAll('.mode-tab').forEach(t => t.classList.toggle('active', t === tab));
+      document.getElementById('panel-photo').classList.toggle('active', mode === 'photo');
+    });
+  });
+
+  function showStatus(msg, type = 'info') {
+    statusEl.className = 'status ' + type;
+    statusEl.innerHTML = msg;
+  }
+  function hideStatus() { statusEl.className = 'status hidden'; }
+
+  function fillForm(data) {
+    const map = {
+      name: 'name', phone: 'phone', lineName: 'lineName',
+      treatment: 'treatment', chemical: 'chemical', cycle: 'cycle',
+      gender: 'gender', age: 'age', stylist: 'stylist', memo: 'memo',
+    };
+    for (const [key, field] of Object.entries(map)) {
+      if (data[key] != null && data[key] !== '') {
+        const el = form.elements[field];
+        if (el) el.value = data[key];
+      }
+    }
+  }
+
+  function showProgress(label, pct) {
+    const bar = pct == null
+      ? '<div class="progress"><div class="progress-bar indeterminate"></div></div>'
+      : `<div class="progress"><div class="progress-bar" style="width:${pct}%"></div></div>`;
+    statusEl.className = 'status info';
+    statusEl.innerHTML = `<div>${label}</div>${bar}`;
+  }
+
+  // 写真→AI解析
+  photoInput.addEventListener('change', async () => {
+    const file = photoInput.files[0];
+    if (!file) return;
+
+    showProgress('📷 画像を読み込み中...', 10);
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result;
+      showProgress('📤 画像をアップロード中...', 40);
+
+      try {
+        const res = await fetch('/api/registration/analyze-photo', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
+          body: JSON.stringify({ image: base64 }),
+        });
+
+        if (res.headers.get('content-type')?.includes('text/html')) {
+          throw new Error('APIサーバーに接続できません');
+        }
+
+        showProgress('🤖 AIがカルテを読み取り中...', null);
+
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || '解析失敗');
+
+        showProgress('✏️ フォームに自動入力中...', 90);
+        fillForm(json.data || {});
+
+        setTimeout(() => {
+          showStatus('✅ 読み取り完了！内容を確認して登録してください', 'success');
+        }, 300);
+
+        // 端末保存なし：inputをクリア
+        photoInput.value = '';
+      } catch (err) {
+        showStatus('❌ 読み取り失敗: ' + err.message, 'error');
+        photoInput.value = '';
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // フォーム送信
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const payload = {};
+    for (const [k, v] of fd.entries()) payload[k] = v;
+    payload.salonId = new URLSearchParams(location.search).get('salonId') || null;
+
+    submitBtn.disabled = true;
+    showStatus('<span class="loading"></span>登録中...', 'info');
+
+    try {
+      // 既存チェック
+      const checkRes = await fetch('/api/registration/check-phone/' + encodeURIComponent(payload.phone), {
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+      });
+      if (checkRes.headers.get('content-type')?.includes('text/html')) {
+        throw new Error('APIサーバーに接続できません');
+      }
+      const checkJson = await checkRes.json();
+      if (checkJson.exists) {
+        const ok = confirm('この電話番号は既に登録されています。内容を更新しますか？');
+        if (!ok) {
+          submitBtn.disabled = false;
+          hideStatus();
+          return;
+        }
+      }
+
+      const res = await fetch('/api/registration/customer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.headers.get('content-type')?.includes('text/html')) {
+        throw new Error('APIサーバーに接続できません');
+      }
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '登録失敗');
+
+      const label = json.mode === 'updated' ? '更新' : '登録';
+      showStatus(`✅ ${label}が完了しました`, 'success');
+      if (json.mode === 'created') form.reset();
+    } catch (err) {
+      showStatus('❌ 登録失敗: ' + err.message, 'error');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

@@ -59,6 +59,16 @@ function getSlackClient() {
   return slackWeb;
 }
 
+// フリーランスモード or Slack未設定なら通知スキップ
+function shouldSkipSlack(session) {
+  if (!process.env.SLACK_BOT_TOKEN) return true;
+  if (session && session.tenantId) {
+    const tenant = getTenant(session.tenantId);
+    if (tenant && tenant.mode === 'freelance') return true;
+  }
+  return false;
+}
+
 // ─── テナント別 LINE Client キャッシュ ───
 const tenantLineClients = new Map();
 
@@ -308,6 +318,10 @@ async function replyToLine(replyToken, text) {
 // Slack: #受付-全件にリアルタイムログ
 // ============================================
 async function postToAllChannel(session, customerMsg, aiMsg) {
+  if (shouldSkipSlack(session)) {
+    console.log('[Slack] フリーランス/未設定のためスキップ: postToAllChannel');
+    return;
+  }
   const slack = getSlackClient();
   if (!slack || !CHANNEL_ALL) return;
 
@@ -345,6 +359,10 @@ async function postToAllChannel(session, customerMsg, aiMsg) {
 // Slack: 引き継ぎ → 担当チャンネル + #受付-全件
 // ============================================
 async function sendHandoffToChannels(session, staffName) {
+  if (shouldSkipSlack(session)) {
+    console.log('[Slack] フリーランス/未設定のためスキップ: sendHandoffToChannels');
+    return;
+  }
   const slack = getSlackClient();
   if (!slack) return;
 
@@ -472,6 +490,10 @@ async function sendHandoffToChannels(session, staffName) {
 // 引き継ぎ後：お客様のメッセージをSlackスレッドに転送
 // ============================================
 async function forwardCustomerMessageToSlack(session, message) {
+  if (shouldSkipSlack(session)) {
+    console.log('[Slack] フリーランス/未設定のためスキップ: forwardCustomerMessageToSlack');
+    return;
+  }
   const slack = getSlackClient();
   if (!slack) return;
 
