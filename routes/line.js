@@ -20,7 +20,7 @@ const { buildLineCounselingPrompt } = require('../prompts/lineCounseling');
 const { buildFreelanceCounselingPrompt } = require('../prompts/freelanceCounseling');
 const { findStaffByName } = require('../config/staff');
 const { getTenant } = require('../config/tenants');
-const { getCustomerProfile, saveConversationLog, uploadImageToStorage } = require('../supabase-client');
+const { getCustomerProfile, saveConversationLog, uploadImageToStorage, hasPriorConversation } = require('../supabase-client');
 const { buildKarteContext } = require('../ai-receptionist');
 const { CHANNEL_ALL, CHANNEL_NEW, getChannelForStylist } = require('../config/slackChannels');
 
@@ -799,7 +799,13 @@ async function generateFreelanceResponse(session, tenant) {
     karteContext = buildKarteContext(session.customerProfile);
   }
 
-  let systemPrompt = buildFreelanceCounselingPrompt(tenant, karteContext);
+  // 過去のconversation_logsの有無で初回判定（現在のメッセージはまだ保存前）
+  const hadPrior = await hasPriorConversation(session.userId);
+  const userTurnCountForGreeting = session.conversationHistory.filter(m => m.role === 'user').length;
+  // DBに過去ログなし かつ このセッション内でも初めてのuser発話（== 1）なら初回
+  const isFirstContact = !hadPrior && userTurnCountForGreeting <= 1;
+
+  let systemPrompt = buildFreelanceCounselingPrompt(tenant, karteContext, { isFirstContact });
 
   // 2往復未満は引き継ぎ禁止
   const userTurnCount = session.conversationHistory.filter(m => m.role === 'user').length;

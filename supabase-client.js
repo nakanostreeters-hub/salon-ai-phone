@@ -191,6 +191,23 @@ async function uploadImageToStorage(buffer, filename, contentType = 'image/jpeg'
   return data?.publicUrl || null;
 }
 
+// line_user_id にこれまでの conversation_logs があるかチェック
+async function hasPriorConversation(lineUserId) {
+  const client = getClient();
+  if (!client || !lineUserId) return false;
+
+  const { count, error } = await client
+    .from('conversation_logs')
+    .select('*', { count: 'exact', head: true })
+    .eq('line_user_id', lineUserId);
+
+  if (error) {
+    console.warn('[Supabase] 過去会話チェック失敗:', error.message);
+    return false;
+  }
+  return (count || 0) > 0;
+}
+
 module.exports = {
   findCustomerByPhone,
   findCustomerByLineId,
@@ -199,4 +216,5 @@ module.exports = {
   getCustomerProfile,
   saveConversationLog,
   uploadImageToStorage,
+  hasPriorConversation,
 };
