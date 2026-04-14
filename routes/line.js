@@ -144,6 +144,11 @@ router.post('/', async (req, res) => {
   // LINEに即座に200を返す
   res.status(200).json({ status: 'ok' });
 
+  // カルテくんへ転送（非同期・失敗しても継続）
+  forwardToKarutekun(rawBody, req.headers).catch((err) => {
+    console.error('[LINE Webhook] カルテくん転送エラー:', err.message);
+  });
+
   // デフォルトはフリーランスモード
   const tenant = getTenant('freelance');
   if (!tenant) {

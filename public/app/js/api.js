@@ -111,10 +111,14 @@ async function getDashboardAlerts() {
   return apiFetch('/dashboard/alerts');
 }
 
+async function getDashboardUnanswered() {
+  return apiFetch('/dashboard/unanswered');
+}
+
 export {
   getToken, setToken, clearToken, getUser, setUser,
   login, logout,
   getChats, getChatMessages, sendChatReply,
   getCustomers, getCustomerDetail,
-  getDashboard, getDashboardStaff, getDashboardAlerts,
+  getDashboard, getDashboardStaff, getDashboardAlerts, getDashboardUnanswered,
 };

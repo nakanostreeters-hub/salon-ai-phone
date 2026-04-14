@@ -28,6 +28,10 @@ const tenants = {
     id: 'freelance',
     mode: 'freelance',
     name: process.env.FREELANCE_SALON_NAME || 'プレミアモデルズ中野',
+    concierge: {
+      name: process.env.FREELANCE_CONCIERGE_NAME || 'レナ',
+      salonName: process.env.FREELANCE_SALON_NAME || 'プレミアモデルズ中野',
+    },
     lineChannelId: process.env.LINE_CHANNEL_ID,
     lineChannelSecret: process.env.LINE_CHANNEL_SECRET,
     lineChannelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -49,6 +53,10 @@ const tenants = {
     id: 'freelance-template',
     mode: 'freelance',
     name: '',
+    concierge: {
+      name: 'レナ',
+      salonName: '',
+    },
     lineChannelId: '',
     lineChannelSecret: '',
     lineChannelAccessToken: '',

@@ -294,7 +294,33 @@ router.get('/customers', authMiddleware, async (req, res) => {
     const { data, error, count } = await query;
     if (error) throw error;
 
-    res.json({ customers: data || [], total: count || 0 });
+    // 各顧客の最新 conversation_logs タイムスタンプを紐付け
+    const customers = data || [];
+    const customerIds = customers.map(c => c.id).filter(Boolean);
+    let lastMsgMap = {};
+    if (customerIds.length) {
+      const { data: logs } = await req.supabase
+        .from('conversation_logs')
+        .select('customer_id, created_at, message, customer_message')
+        .in('customer_id', customerIds)
+        .order('created_at', { ascending: false });
+      for (const l of logs || []) {
+        if (!lastMsgMap[l.customer_id]) {
+          lastMsgMap[l.customer_id] = {
+            at: l.created_at,
+            text: l.message || l.customer_message,
+          };
+        }
+      }
+    }
+
+    const enriched = customers.map(c => ({
+      ...c,
+      last_message_at: lastMsgMap[c.id]?.at || null,
+      last_message_text: lastMsgMap[c.id]?.text || null,
+    }));
+
+    res.json({ customers: enriched, total: count || 0 });
   } catch (err) {
     console.error('[API /customers] Error:', err.message);
     res.status(500).json({ error: '顧客の取得に失敗しました' });
@@ -390,6 +416,15 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
       .from('customers')
       .select('*', { count: 'exact', head: true });
 
+    // 本日の問い合わせ数（conversation_logs ユニーク顧客数）
+    const { data: todayLogs } = await req.supabase
+      .from('conversation_logs')
+      .select('line_user_id, created_at')
+      .gte('created_at', todayStr)
+      .lt('created_at', todayStr + 'T23:59:59');
+    const todayInquiries = new Set((todayLogs || []).map(l => l.line_user_id)).size;
+    const todayMessages = (todayLogs || []).length;
+
     // セグメント分布（動的計算）
     // customers テーブルから全顧客の来店情報を取得
     const { data: allCustomers } = await req.supabase
@@ -436,6 +471,8 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
       todaySales,
       monthSales,
       totalCustomers: totalCustomers || 0,
+      todayInquiries,
+      todayMessages,
       segments: filteredSegments,
     });
   } catch (err) {
@@ -470,6 +507,63 @@ router.get('/dashboard/staff', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('[API /dashboard/staff] Error:', err.message);
     res.status(500).json({ error: 'スタッフ実績の取得に失敗しました' });
+  }
+});
+
+// GET /api/dashboard/unanswered - 未対応の最新メッセージ（is_handoff=true 以降、
+// スタッフ返信がまだ無い、または最新10件）
+router.get('/dashboard/unanswered', authMiddleware, async (req, res) => {
+  try {
+    // 最新の会話ログから、line_user_id ごとの最終メッセージを取得
+    const { data: logs } = await req.supabase
+      .from('conversation_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    // line_user_id ごとに最新1件だけ
+    const latestByUser = new Map();
+    for (const log of logs || []) {
+      if (!latestByUser.has(log.line_user_id)) {
+        latestByUser.set(log.line_user_id, log);
+      }
+    }
+
+    // 最終が customer 発信 or is_handoff のものを未対応扱い
+    const unanswered = [...latestByUser.values()].filter(l => {
+      if (l.sender_type === 'staff') return false;
+      if (l.sender_type === 'customer') return true;
+      if (l.is_handoff) return true;
+      // sender_type がない既存データ：AI応答があれば対応済み扱い（customer発のみ未対応）
+      return l.sender_type === 'customer';
+    }).slice(0, 10);
+
+    // 顧客名を紐付け
+    const customerIds = [...new Set(unanswered.map(l => l.customer_id).filter(Boolean))];
+    let nameMap = {};
+    if (customerIds.length) {
+      const { data: customers } = await req.supabase
+        .from('customers')
+        .select('id, customer_name, name')
+        .in('id', customerIds);
+      if (customers) {
+        nameMap = Object.fromEntries(customers.map(c => [c.id, getCustomerName(c)]));
+      }
+    }
+
+    res.json({
+      unanswered: unanswered.map(l => ({
+        lineUserId: l.line_user_id,
+        customerId: l.customer_id,
+        customerName: nameMap[l.customer_id] || null,
+        lastMessage: l.message || l.customer_message,
+        lastAt: l.created_at,
+        isHandoff: l.is_handoff,
+      })),
+    });
+  } catch (err) {
+    console.error('[API /dashboard/unanswered] Error:', err.message);
+    res.status(500).json({ error: '未対応メッセージの取得に失敗しました' });
   }
 });
 
