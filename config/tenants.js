@@ -27,7 +27,7 @@ const tenants = {
   'freelance': {
     id: 'freelance',
     mode: 'freelance',
-    name: process.env.FREELANCE_SALON_NAME || 'フリーランス',
+    name: process.env.FREELANCE_SALON_NAME || 'プレミアモデルズ中野',
     lineChannelId: process.env.LINE_CHANNEL_ID,
     lineChannelSecret: process.env.LINE_CHANNEL_SECRET,
     lineChannelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
