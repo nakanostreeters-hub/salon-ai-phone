@@ -36,6 +36,179 @@ function getCustomerName(row) {
   return row.customer_name || row.name || '';
 }
 
+// ─── ヘルパー: 来店履歴から施術リスクを判定 ───
+// visits: [{ menu, visited_at, ... }]
+function analyzeTreatmentRisks(visits) {
+  const flags = {
+    hasStraightening: false,
+    hasBleach: false,
+    recentHeavy: false,
+    warnings: [],
+  };
+  if (!visits || visits.length === 0) return flags;
+
+  const now = Date.now();
+  const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+  const STRAIGHT_RE = /縮毛矯正|ストレート|ストパ/;
+  const BLEACH_RE = /ブリーチ|脱色|ダブルカラー|bleach/i;
+
+  let lastStraightAt = null;
+  let lastBleachAt = null;
+
+  for (const v of visits) {
+    const menu = v.menu || '';
+    const at = v.visited_at ? new Date(v.visited_at).getTime() : 0;
+    if (STRAIGHT_RE.test(menu)) {
+      flags.hasStraightening = true;
+      if (!lastStraightAt || at > lastStraightAt) lastStraightAt = at;
+    }
+    if (BLEACH_RE.test(menu)) {
+      flags.hasBleach = true;
+      if (!lastBleachAt || at > lastBleachAt) lastBleachAt = at;
+    }
+  }
+
+  if (flags.hasStraightening) {
+    flags.warnings.push({
+      level: 'caution',
+      code: 'straightening_history',
+      text: 'カラー提案時は薬剤選定に注意（縮毛矯正履歴あり）',
+    });
+  }
+  if (flags.hasBleach) {
+    flags.warnings.push({
+      level: 'danger',
+      code: 'bleach_damage',
+      text: 'ブリーチ履歴あり — ダメージ配慮が必要',
+    });
+  }
+  const latestHeavy = Math.max(lastStraightAt || 0, lastBleachAt || 0);
+  if (latestHeavy && now - latestHeavy < ONE_MONTH_MS) {
+    flags.recentHeavy = true;
+    flags.warnings.push({
+      level: 'danger',
+      code: 'recent_heavy',
+      text: '直近1ヶ月以内に高負荷メニュー施術 — 追加施術は慎重に',
+    });
+  }
+
+  return flags;
+}
+
+// ─── ヘルパー: 会話ログから接客タイプを判定 ───
+// logs は created_at 昇順推奨（内部で並び替え）
+function analyzeServiceStyle(logs) {
+  if (!logs || logs.length === 0) {
+    return { type: 'unknown', label: '未分析', advice: 'データ不足：通常の接客で様子を見てください' };
+  }
+
+  const sorted = [...logs].sort(
+    (a, b) => new Date(a.created_at) - new Date(b.created_at)
+  );
+
+  // 顧客発話のみ抽出
+  const customerMsgs = sorted.filter(l => {
+    if (l.sender_type === 'customer') return true;
+    if (l.sender_type) return false; // staff/system は除外
+    // 旧形式: customer_message が「（…）」以外
+    return l.customer_message && !/^（.+）$/.test(l.customer_message);
+  });
+
+  if (customerMsgs.length === 0) {
+    return { type: 'unknown', label: '未分析', advice: 'データ不足：通常の接客で様子を見てください' };
+  }
+
+  // 平均メッセージ長
+  const totalLen = customerMsgs.reduce((s, l) => {
+    const txt = l.message || l.customer_message || '';
+    return s + txt.length;
+  }, 0);
+  const avgLen = totalLen / customerMsgs.length;
+
+  // 返信速度：直前の AI 応答(ai_response あり)から次の顧客発話までの時間
+  const gaps = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    const prevIsAi = prev.ai_response || prev.sender_type === 'ai' || prev.sender_type === 'staff';
+    const currIsCustomer =
+      curr.sender_type === 'customer' ||
+      (!curr.sender_type && curr.customer_message && !/^（.+）$/.test(curr.customer_message));
+    if (prevIsAi && currIsCustomer) {
+      const gap = (new Date(curr.created_at) - new Date(prev.created_at)) / 1000; // 秒
+      if (gap >= 0 && gap < 24 * 3600) gaps.push(gap);
+    }
+  }
+  const medianGap =
+    gaps.length > 0
+      ? gaps.slice().sort((a, b) => a - b)[Math.floor(gaps.length / 2)]
+      : null;
+
+  // 判定: 短文 & 即レス → 即決型
+  const quick = avgLen < 20 && (medianGap === null || medianGap < 300);
+  if (quick) {
+    return {
+      type: 'quick',
+      label: '即決型',
+      advice: '2択提案が効果的',
+      avgLen: Math.round(avgLen),
+      medianReplySec: medianGap,
+      sampleSize: customerMsgs.length,
+    };
+  }
+  return {
+    type: 'careful',
+    label: '慎重型',
+    advice: '写真を見せながら丁寧に説明',
+    avgLen: Math.round(avgLen),
+    medianReplySec: medianGap,
+    sampleSize: customerMsgs.length,
+  };
+}
+
+// ─── ヘルパー: 会話サマリー（詳細画面用） ───
+function summarizeConversation(logs) {
+  if (!logs || logs.length === 0) {
+    return { totalMessages: 0, customerMessages: 0, aiMessages: 0, handoffCount: 0, keywords: [], firstAt: null, lastAt: null };
+  }
+  let customerMessages = 0;
+  let aiMessages = 0;
+  let handoffCount = 0;
+  const textBuf = [];
+  for (const l of logs) {
+    if (l.is_handoff) handoffCount++;
+    const isCustomer =
+      l.sender_type === 'customer' ||
+      (!l.sender_type && l.customer_message && !/^（.+）$/.test(l.customer_message));
+    if (isCustomer) {
+      customerMessages++;
+      textBuf.push(l.message || l.customer_message || '');
+    } else if (l.ai_response || l.sender_type === 'ai') {
+      aiMessages++;
+    }
+  }
+  // 簡易キーワード抽出: 2文字以上の頻出語（カタカナ/漢字）
+  const joined = textBuf.join(' ');
+  const tokens = joined.match(/[ァ-ヴー]{2,}|[一-龥]{2,}/g) || [];
+  const freq = {};
+  for (const t of tokens) freq[t] = (freq[t] || 0) + 1;
+  const keywords = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([word, count]) => ({ word, count }));
+
+  const sorted = [...logs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  return {
+    totalMessages: logs.length,
+    customerMessages,
+    aiMessages,
+    handoffCount,
+    keywords,
+    firstAt: sorted[0].created_at,
+    lastAt: sorted[sorted.length - 1].created_at,
+  };
+}
+
 // ============================================
 // 認証ミドルウェア
 // ============================================
@@ -294,14 +467,26 @@ router.get('/customers', authMiddleware, async (req, res) => {
     const { data, error, count } = await query;
     if (error) throw error;
 
-    // 各顧客の最新 conversation_logs タイムスタンプを紐付け
+    // 各顧客の会話ログを取得 → 最終メッセージ & 接客タイプ判定
     const customers = data || [];
     const customerIds = customers.map(c => c.id).filter(Boolean);
     let lastMsgMap = {};
+    let logsByCustomer = {};
+    let visitsByCustomer = {};
+    if (customerIds.length) {
+      const { data: visitsAll } = await req.supabase
+        .from('visits')
+        .select('customer_id, menu, visited_at')
+        .in('customer_id', customerIds)
+        .order('visited_at', { ascending: false });
+      for (const v of visitsAll || []) {
+        (visitsByCustomer[v.customer_id] = visitsByCustomer[v.customer_id] || []).push(v);
+      }
+    }
     if (customerIds.length) {
       const { data: logs } = await req.supabase
         .from('conversation_logs')
-        .select('customer_id, created_at, message, customer_message')
+        .select('customer_id, created_at, message, customer_message, ai_response, sender_type, is_handoff')
         .in('customer_id', customerIds)
         .order('created_at', { ascending: false });
       for (const l of logs || []) {
@@ -311,14 +496,19 @@ router.get('/customers', authMiddleware, async (req, res) => {
             text: l.message || l.customer_message,
           };
         }
+        (logsByCustomer[l.customer_id] = logsByCustomer[l.customer_id] || []).push(l);
       }
     }
 
-    const enriched = customers.map(c => ({
-      ...c,
-      last_message_at: lastMsgMap[c.id]?.at || null,
-      last_message_text: lastMsgMap[c.id]?.text || null,
-    }));
+    const enriched = customers.map(c => {
+      const style = analyzeServiceStyle(logsByCustomer[c.id] || []);
+      return {
+        ...c,
+        last_message_at: lastMsgMap[c.id]?.at || null,
+        last_message_text: lastMsgMap[c.id]?.text || null,
+        service_style: style,
+      };
+    });
 
     res.json({ customers: enriched, total: count || 0 });
   } catch (err) {
@@ -366,11 +556,16 @@ router.get('/customers/:id', authMiddleware, async (req, res) => {
       conversationLogs = logs || [];
     }
 
+    const serviceStyle = analyzeServiceStyle(conversationLogs);
+    const conversationSummary = summarizeConversation(conversationLogs);
+
     res.json({
       customer,
       visits: visits || [],
       purchases: purchases || [],
       conversationLogs,
+      serviceStyle,
+      conversationSummary,
     });
   } catch (err) {
     console.error('[API /customers/:id] Error:', err.message);

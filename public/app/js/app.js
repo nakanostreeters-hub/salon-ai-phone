@@ -546,12 +546,13 @@ async function renderCustomersPage() {
               <th data-sort="customer_name">名前</th>
               <th data-sort="phone">電話番号</th>
               <th data-sort="segment">セグメント</th>
+              <th>接客タイプ</th>
               <th data-sort="last_visit_at">最終来店</th>
               <th>最終メッセージ</th>
             </tr>
           </thead>
           <tbody id="customer-tbody">
-            <tr><td colspan="5"><div class="loading"><span class="spinner"></span>読み込み中...</div></td></tr>
+            <tr><td colspan="6"><div class="loading"><span class="spinner"></span>読み込み中...</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -600,7 +601,7 @@ async function loadCustomers() {
   const tbody = document.getElementById('customer-tbody');
   if (!tbody) return;
 
-  tbody.innerHTML = `<tr><td colspan="5"><div class="loading"><span class="spinner"></span>読み込み中...</div></td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="6"><div class="loading"><span class="spinner"></span>読み込み中...</div></td></tr>`;
 
   try {
     const params = {};
@@ -614,7 +615,7 @@ async function loadCustomers() {
     customerState.total = data.total || 0;
 
     if (customerState.customers.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-state-text">該当する顧客はありません</div></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-state-text">該当する顧客はありません</div></div></td></tr>`;
       return;
     }
 
@@ -625,6 +626,13 @@ async function loadCustomers() {
       const lastMsg = c.last_message_text
         ? `<span style="color:var(--text-muted);font-size:12px;">${formatTime(c.last_message_at)}</span><br><span style="font-size:13px;">${escapeHtml((c.last_message_text || '').slice(0, 30))}</span>`
         : '<span style="color:var(--text-muted);font-size:12px;">-</span>';
+      const style = c.service_style || { type: 'unknown', label: '未分析', advice: '' };
+      const styleColor = style.type === 'quick' ? '#2563eb' : style.type === 'careful' ? '#059669' : 'var(--text-muted)';
+      const styleCell = `
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${styleColor}22;color:${styleColor};font-size:12px;font-weight:600;width:fit-content;">${escapeHtml(style.label)}</span>
+          ${style.advice ? `<span style="font-size:11px;color:var(--text-muted);">${escapeHtml(style.advice)}</span>` : ''}
+        </div>`;
       return `
         <tr data-customer-id="${c.id}">
           <td>
@@ -635,6 +643,7 @@ async function loadCustomers() {
           </td>
           <td>${escapeHtml(c.phone || '-')}</td>
           <td><span class="segment-tag ${c.segment || ''}">${segmentLabel(c.segment)}</span></td>
+          <td>${styleCell}</td>
           <td>${lastVisit}</td>
           <td>${lastMsg}</td>
         </tr>
@@ -645,7 +654,7 @@ async function loadCustomers() {
       row.addEventListener('click', () => openCustomerDetail(row.dataset.customerId));
     });
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-state-text">顧客の読み込みに失敗しました</div></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-state-text">顧客の読み込みに失敗しました</div></div></td></tr>`;
   }
 }
 
@@ -673,6 +682,12 @@ async function openCustomerDetail(customerId) {
     const data = await getCustomerDetail(customerId);
     const c = data.customer;
     const visits = data.visits || [];
+    const style = data.serviceStyle || { type: 'unknown', label: '未分析', advice: '' };
+    const summary = data.conversationSummary || { totalMessages: 0, customerMessages: 0, aiMessages: 0, handoffCount: 0, keywords: [] };
+    const styleColor = style.type === 'quick' ? '#2563eb' : style.type === 'careful' ? '#059669' : '#6b7280';
+    const replySec = style.medianReplySec;
+    const replyStr = replySec == null ? '-' : replySec < 60 ? `${Math.round(replySec)}秒` : `${Math.round(replySec / 60)}分`;
+    const fmtTime = (t) => t ? new Date(t).toLocaleString('ja-JP') : '-';
 
     modal.querySelector('.modal-body').innerHTML = `
       <div style="margin-bottom:20px;">
@@ -685,7 +700,48 @@ async function openCustomerDetail(customerId) {
           <span class="segment-tag ${c.segment || ''}" style="margin-left:auto;">${segmentLabel(c.segment)}</span>
         </div>
         ${c.memo ? `<div style="padding:12px;background:var(--bg);border-radius:var(--radius-sm);font-size:13px;margin-bottom:16px;">${escapeHtml(c.memo)}</div>` : ''}
+
+        <div style="padding:14px;border:1px solid ${styleColor}33;background:${styleColor}11;border-radius:var(--radius-sm);margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+            <span style="font-size:12px;color:var(--text-muted);">接客タイプ</span>
+            <span style="padding:3px 10px;border-radius:12px;background:${styleColor};color:#fff;font-size:12px;font-weight:600;">${escapeHtml(style.label)}</span>
+          </div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:6px;">接客アドバイス：${escapeHtml(style.advice || '-')}</div>
+          <div style="font-size:12px;color:var(--text-muted);">
+            平均メッセージ長 ${style.avgLen ?? '-'} 文字 / 返信速度 中央値 ${replyStr} / サンプル ${style.sampleSize ?? 0} 件
+          </div>
+        </div>
       </div>
+      <div class="karte-section-title">会話サマリー</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+        <div style="padding:10px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
+          <div style="font-size:11px;color:var(--text-muted);">総メッセージ</div>
+          <div style="font-size:18px;font-weight:600;">${summary.totalMessages}</div>
+        </div>
+        <div style="padding:10px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
+          <div style="font-size:11px;color:var(--text-muted);">顧客発話</div>
+          <div style="font-size:18px;font-weight:600;">${summary.customerMessages}</div>
+        </div>
+        <div style="padding:10px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
+          <div style="font-size:11px;color:var(--text-muted);">AI応答</div>
+          <div style="font-size:18px;font-weight:600;">${summary.aiMessages}</div>
+        </div>
+        <div style="padding:10px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;">
+          <div style="font-size:11px;color:var(--text-muted);">引継</div>
+          <div style="font-size:18px;font-weight:600;">${summary.handoffCount}</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+        初回: ${fmtTime(summary.firstAt)} / 最終: ${fmtTime(summary.lastAt)}
+      </div>
+      ${summary.keywords && summary.keywords.length > 0 ? `
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">よく出る話題</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${summary.keywords.map(k => `<span style="padding:3px 10px;background:var(--bg);border-radius:12px;font-size:12px;">${escapeHtml(k.word)} <span style="color:var(--text-muted);">×${k.count}</span></span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
       <div class="karte-section-title">来店履歴 (${visits.length}件)</div>
       ${visits.length === 0 ? '<p style="color:var(--text-muted);font-size:13px;">来店記録なし</p>' :
         `<table class="staff-table">
