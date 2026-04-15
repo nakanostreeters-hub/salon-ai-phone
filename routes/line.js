@@ -32,7 +32,12 @@ const LINE_CONFIG = {
   channelSecret: process.env.LINE_CHANNEL_SECRET || '',
 };
 
-const KARUTEKUN_WEBHOOK_URL = process.env.KARUTEKUN_WEBHOOK_URL || 'https://line-webhook.karutekun.com/webhook/salons/227';
+// LINE Webhookのプロキシ転送先（カルテくん）
+// 優先順位: WEBHOOK_FORWARD_URL > KARUTEKUN_WEBHOOK_URL > 既定値
+const WEBHOOK_FORWARD_URL =
+  process.env.WEBHOOK_FORWARD_URL ||
+  process.env.KARUTEKUN_WEBHOOK_URL ||
+  'https://line-webhook.karutekun.com/webhook/salons/227';
 
 // LINE Client
 let lineClient = null;
@@ -251,10 +256,8 @@ router.post('/', async (req, res) => {
   // LINEに即座に200を返す
   res.status(200).json({ status: 'ok' });
 
-  // カルテくんへ転送（非同期・失敗しても継続）
-  forwardToKarutekun(rawBody, req.headers).catch((err) => {
-    console.error('[LINE Webhook] カルテくん転送エラー:', err.message);
-  });
+  // KaruteKunへプロキシ転送（非同期・失敗しても処理継続）
+  forwardWebhook(rawBody, req.headers);
 
   // デフォルトはフリーランスモード
   const tenant = getTenant('freelance');
@@ -278,19 +281,43 @@ router.post('/', async (req, res) => {
 });
 
 // ============================================
-// カルテくんへの転送
+// LINE Webhook プロキシ転送
+// 受信したリクエストのrawBodyとx-line-signatureを指定URLへ非同期転送
+// 失敗してもログのみ出力し、呼び出し元の処理は継続する
 // ============================================
-async function forwardToKarutekun(rawBody, headers) {
+function forwardWebhook(rawBody, headers, url) {
+  const targetUrl = url || WEBHOOK_FORWARD_URL;
+  if (!targetUrl) return;
+
   const forwardHeaders = {
     'Content-Type': 'application/json',
-    'x-line-signature': headers['x-line-signature'],
+    'x-line-signature': headers['x-line-signature'] || '',
   };
-  const response = await fetch(KARUTEKUN_WEBHOOK_URL, {
+
+  // 非同期 fire-and-forget。タイムアウトで自分の処理をブロックしない。
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  fetch(targetUrl, {
     method: 'POST',
     headers: forwardHeaders,
     body: rawBody,
-  });
-  console.log(`[LINE Webhook] カルテくん転送結果: ${response.status}`);
+    signal: controller.signal,
+  })
+    .then((response) => {
+      clearTimeout(timeoutId);
+      console.log(`[LINE Forward] 転送完了 → ${targetUrl} status=${response.status}`);
+    })
+    .catch((err) => {
+      clearTimeout(timeoutId);
+      console.error(`[LINE Forward] 転送エラー → ${targetUrl}: ${err.message}`);
+    });
+}
+
+// 後方互換エイリアス（既存呼び出し箇所を壊さない）
+function forwardToKarutekun(rawBody, headers) {
+  forwardWebhook(rawBody, headers);
+  return Promise.resolve();
 }
 
 // ============================================
@@ -674,12 +701,9 @@ router.post('/:tenantId', async (req, res) => {
   if (!body.events || body.events.length === 0) return;
 
   if (tenant.mode === 'salon') {
-    // サロンモード: カルテくん転送 + 既存処理
-    if (tenant.karutekunWebhook) {
-      forwardToKarutekunWithUrl(rawBody, req.headers, tenant.karutekunWebhook).catch((err) => {
-        console.error('[LINE Webhook] カルテくん転送エラー:', err.message);
-      });
-    }
+    // サロンモード: KaruteKun転送 + 既存処理
+    // テナント設定 > 環境変数 の順で転送先URLを決定
+    forwardWebhook(rawBody, req.headers, tenant.karutekunWebhook || WEBHOOK_FORWARD_URL);
     for (const event of body.events) {
       try {
         await handleEvent(event);
@@ -698,22 +722,6 @@ router.post('/:tenantId', async (req, res) => {
     }
   }
 });
-
-// ============================================
-// カルテくん転送（URL指定版）
-// ============================================
-async function forwardToKarutekunWithUrl(rawBody, headers, webhookUrl) {
-  const forwardHeaders = {
-    'Content-Type': 'application/json',
-    'x-line-signature': headers['x-line-signature'],
-  };
-  const response = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: forwardHeaders,
-    body: rawBody,
-  });
-  console.log(`[LINE Webhook] カルテくん転送結果: ${response.status}`);
-}
 
 // ============================================
 // フリーランスモード処理
