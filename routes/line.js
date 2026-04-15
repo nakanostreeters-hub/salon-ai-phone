@@ -15,7 +15,10 @@ const {
   addMessage,
   setStatus,
   setDisplayName,
+  patchSession,
+  setConversationState,
 } = require('../services/lineCounselingSession');
+const { classifyHandoffMessage, scheduleSla, clearSlaTimers } = require('../services/handoffMode');
 const { buildLineCounselingPrompt } = require('../prompts/lineCounseling');
 const { buildFreelanceCounselingPrompt } = require('../prompts/freelanceCounseling');
 const { findStaffByName } = require('../config/staff');
@@ -216,6 +219,15 @@ async function handleSlackReplyToLine(channelId, threadTs, text) {
       messages: [{ type: 'text', text }],
     });
     console.log(`[LINE Push] スタッフ返信送信成功: ${lineUserId}`);
+
+    // 状態遷移: human_active に。SLAタイマーは解除。
+    patchSession(lineUserId, {
+      conversationState: 'human_active',
+      staffLastResponseAt: Date.now(),
+    });
+    clearSlaTimers(lineUserId);
+    console.log(`[Handoff State] ${lineUserId} → human_active (staff replied)`);
+
     return true;
   } catch (err) {
     console.error(`[LINE Push] スタッフ返信送信失敗:`, err.message);
@@ -730,6 +742,184 @@ router.post('/:tenantId', async (req, res) => {
 });
 
 // ============================================
+// 引き継ぎ済みモード（handoff mode）
+// ============================================
+
+// SlackスタイリストスレッドにテキストをポストするヘルパDM (失敗は握りつぶす)
+async function postToHandoffSlackThread(session, tenant, text) {
+  if (shouldSkipSlack(session)) return;
+  const slack = getSlackClient();
+  if (!slack) return;
+  if (!session.slackStylistChannelId || !session.slackStylistThreadTs) return;
+  try {
+    await slack.chat.postMessage({
+      channel: session.slackStylistChannelId,
+      thread_ts: session.slackStylistThreadTs,
+      text,
+    });
+  } catch (err) {
+    console.warn('[Handoff Slack] 通知失敗:', err.message);
+  }
+}
+
+/**
+ * 引き継ぎ済みセッションでお客様メッセージを受信したときの処理
+ * 分類 → ログ保存 → レベル別の動作
+ */
+async function handleHandoffModeMessage(session, tenant, userId, userMessage, replyToken, isImage, imageUrl) {
+  const customerName = session.displayName || 'お客様';
+
+  // クラシファイ
+  const level = await classifyHandoffMessage(userMessage);
+  console.log(`[Handoff] ${userId} メッセージ分類: ${level} state=${session.conversationState}`);
+
+  // 必ず会話ログに保存
+  await saveConversationLog({
+    tenantId: tenant.id,
+    customerId: session.customerProfile?.customer?.id || null,
+    lineUserId: userId,
+    customerMessage: userMessage,
+    aiResponse: `（引き継ぎ済み・${level}）`,
+    messageType: isImage ? 'image' : 'text',
+    imageUrl: imageUrl,
+    timestamp: new Date(),
+  });
+
+  // 監査ログ
+  logCustomerAccess({
+    action: 'handoff_message_received',
+    actor: 'ai',
+    customerId: session.customerProfile?.customer?.id || null,
+    details: { lineUserId: userId, level, conversationState: session.conversationState },
+  }).catch(() => {});
+
+  if (level === 'emergency') {
+    // クレーム: AI絶対しゃべらない、Slackに⚠️タグで緊急通知
+    await postToHandoffSlackThread(
+      session,
+      tenant,
+      `⚠️ *クレーム/苦情の可能性*\n👤 ${customerName}\n>${userMessage}\n（AIは応答しません。至急ご対応ください）`
+    );
+    return;
+  }
+
+  if (level === 'level0') {
+    // 無反応: ログのみ。Slack通知も不要
+    return;
+  }
+
+  if (level === 'level1') {
+    // サイレント通知: Slackに転送だけ
+    await postToHandoffSlackThread(
+      session,
+      tenant,
+      `📩 ${customerName}（引き継ぎ後）\n>${userMessage}`
+    );
+    // クールダウン中だった場合、メッセージが来たので human_active に戻す（スタッフが返すまで保留）
+    return;
+  }
+
+  if (level === 'level2') {
+    // Slack通知は必ず行う
+    await postToHandoffSlackThread(
+      session,
+      tenant,
+      `📨 *本題の問い合わせ*\n👤 ${customerName}\n>${userMessage}`
+    );
+
+    // 条件付き一次受け：スタッフ未応答 かつ handoff から10分超 かつ 一次受け未送信
+    const handoffStartedAt = session.handoffStartedAt || 0;
+    const elapsed = Date.now() - handoffStartedAt;
+    const noStaffYet = !session.staffLastResponseAt;
+    const cooledOff = elapsed > 10 * 60 * 1000;
+
+    if (noStaffYet && cooledOff && !session.holdingMessageSent) {
+      const holdingText = 'ご連絡ありがとうございます。担当が確認し次第ご連絡します。';
+      try {
+        await replyToLineWithClient(replyToken, holdingText, tenant);
+        patchSession(userId, { holdingMessageSent: true });
+        console.log(`[Handoff] ${userId} 一次受け送信（10分SLA超え）`);
+      } catch (err) {
+        console.warn('[Handoff] 一次受け送信失敗:', err.message);
+      }
+    }
+    return;
+  }
+}
+
+/**
+ * SLAタイマーをスケジュール
+ *  5分: スタッフ未返信なら Slack 再通知
+ * 10分: スタッフ未返信ならお客様に「担当が確認中ですので、少々お待ちください」（1回だけ）
+ * 20分: 全体チャンネル/CHANNEL_ALLにエスカレーション
+ */
+function scheduleHandoffSla(session, tenant) {
+  const userId = session.userId;
+  const customerName = session.displayName || 'お客様';
+
+  scheduleSla(userId, {
+    onFiveMin: async () => {
+      const s = getOrCreateSession(userId);
+      if (s.staffLastResponseAt) return;
+      console.log(`[Handoff SLA 5min] ${userId} スタッフ未応答 → Slack再通知`);
+      await postToHandoffSlackThread(
+        s,
+        tenant,
+        `⏰ 5分経過：${customerName}さんへの返信がまだです。ご対応ください。`
+      );
+    },
+    onTenMin: async () => {
+      const s = getOrCreateSession(userId);
+      if (s.staffLastResponseAt) return;
+      if (s.holdingMessageSent) return;
+      console.log(`[Handoff SLA 10min] ${userId} → お客様へ業務的な一次受け`);
+      try {
+        const client = getTenantLineClient(tenant);
+        if (client) {
+          await client.pushMessage({
+            to: userId,
+            messages: [{ type: 'text', text: '担当が確認中ですので、少々お待ちください。' }],
+          });
+          patchSession(userId, { holdingMessageSent: true });
+        }
+      } catch (err) {
+        console.warn('[Handoff SLA 10min] LINE送信失敗:', err.message);
+      }
+      await postToHandoffSlackThread(
+        s,
+        tenant,
+        `⏰ 10分経過：${customerName}さんに「担当が確認中」と一次受けを送りました。`
+      );
+    },
+    onTwentyMin: async () => {
+      const s = getOrCreateSession(userId);
+      if (s.staffLastResponseAt) return;
+      console.log(`[Handoff SLA 20min] ${userId} → エスカレーション`);
+      // 担当チャンネル
+      await postToHandoffSlackThread(
+        s,
+        tenant,
+        `🚨 *20分応答なし*\n${customerName}さんが${customerName}担当を待っています。別担当のフォローをお願いします。`
+      );
+      // 全体チャンネル（あれば）
+      if (CHANNEL_ALL && !shouldSkipSlack(s)) {
+        const slack = getSlackClient();
+        if (slack) {
+          try {
+            await slack.chat.postMessage({
+              channel: CHANNEL_ALL,
+              text: `🚨 *エスカレーション*\n${customerName}さん（LINE）への返信が20分滞留中。フォロー願います。`,
+            });
+          } catch (err) {
+            console.warn('[Handoff SLA 20min] CHANNEL_ALL通知失敗:', err.message);
+          }
+        }
+      }
+    },
+  });
+}
+
+// ============================================
 // フリーランスモード処理
 // ============================================
 async function handleFreelanceMode(event, tenant) {
@@ -800,19 +990,9 @@ async function handleFreelanceMode(event, tenant) {
     }
   }
 
-  // スタッフ引き継ぎ済みの場合 → 追加メッセージもログに保存
+  // スタッフ引き継ぎ済みの場合 → 分類して条件付きで処理
   if (session.status === 'handoff_to_staff') {
-    console.log(`[Freelance] 引き継ぎ済み → ログ保存のみ: ${userId}`);
-    await saveConversationLog({
-      tenantId: tenant.id,
-      customerId: session.customerProfile?.customer?.id || null,
-      lineUserId: userId,
-      customerMessage: userMessage,
-      aiResponse: '（引き継ぎ済み・オーナー対応中）',
-      messageType: isImage ? 'image' : 'text',
-      imageUrl: imageUrl,
-      timestamp: new Date(),
-    });
+    await handleHandoffModeMessage(session, tenant, userId, userMessage, replyToken, isImage, imageUrl);
     return;
   }
 
@@ -882,6 +1062,15 @@ async function handleFreelanceMode(event, tenant) {
     if (needsHandoff) {
       setStatus(userId, 'handoff_to_staff');
 
+      // 引き継ぎ状態の初期化
+      patchSession(userId, {
+        conversationState: 'handoff_pending',
+        handoffStartedAt: Date.now(),
+        staffLastResponseAt: null,
+        holdingMessageSent: false,
+      });
+      console.log(`[Handoff State] ${userId} → handoff_pending`);
+
       // 監査ログ: スタッフ引き継ぎ
       logCustomerAccess({
         action: 'staff_handoff',
@@ -906,6 +1095,9 @@ async function handleFreelanceMode(event, tenant) {
 
       await notifyOwner(tenant, handoffData);
       console.log(`[Freelance] オーナー通知完了: tenant=${tenant.id}, userId=${userId}`);
+
+      // SLAタイマー開始（5分:Slack再通知 / 10分:お客様へ業務的一次受け / 20分:エスカレーション）
+      scheduleHandoffSla(session, tenant);
     }
   } catch (err) {
     console.error('[Freelance] AI応答エラー:', err);

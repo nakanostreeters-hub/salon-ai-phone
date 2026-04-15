@@ -33,6 +33,12 @@ function getOrCreateSession(userId) {
     userId,
     conversationHistory: [],
     status: 'counseling', // 'counseling' | 'handoff_to_staff'
+    // 引き継ぎフロー用の状態管理
+    conversationState: 'bot_active', // bot_active | handoff_pending | human_active | cooldown | closed
+    assignedStaffId: null,
+    handoffStartedAt: null,
+    staffLastResponseAt: null,
+    holdingMessageSent: false, // 10分SLAで業務的な一次受けを送ったか
     createdAt: now,
     updatedAt: now,
     displayName: null,
@@ -99,6 +105,22 @@ function setDisplayName(userId, displayName) {
 }
 
 /**
+ * 引き継ぎフロー用の状態をまとめて更新
+ * @param {string} userId
+ * @param {object} patch - { conversationState, assignedStaffId, handoffStartedAt, staffLastResponseAt, holdingMessageSent }
+ */
+function patchSession(userId, patch) {
+  const session = getSession(userId);
+  if (!session) return;
+  Object.assign(session, patch);
+  session.updatedAt = Date.now();
+}
+
+function setConversationState(userId, state) {
+  patchSession(userId, { conversationState: state });
+}
+
+/**
  * セッションを削除
  * @param {string} userId
  */
@@ -130,4 +152,6 @@ module.exports = {
   setDisplayName,
   deleteSession,
   cleanupExpiredSessions,
+  patchSession,
+  setConversationState,
 };
