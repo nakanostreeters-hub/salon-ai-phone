@@ -20,7 +20,7 @@ const { buildLineCounselingPrompt } = require('../prompts/lineCounseling');
 const { buildFreelanceCounselingPrompt } = require('../prompts/freelanceCounseling');
 const { findStaffByName } = require('../config/staff');
 const { getTenant } = require('../config/tenants');
-const { getCustomerProfile, saveConversationLog, uploadImageToStorage, hasPriorConversation } = require('../supabase-client');
+const { getCustomerProfile, saveConversationLog, uploadImageToStorage, hasPriorConversation, logCustomerAccess } = require('../supabase-client');
 const { buildKarteContext } = require('../ai-receptionist');
 const { CHANNEL_ALL, CHANNEL_NEW, getChannelForStylist } = require('../config/slackChannels');
 
@@ -363,6 +363,12 @@ async function handleEvent(event) {
           setDisplayName(userId, (profile.customer.customer_name || profile.customer.name));
         }
         console.log(`[Supabase] LINE顧客特定: ${(profile.customer.customer_name || profile.customer.name)}`);
+        logCustomerAccess({
+          action: 'customer_view',
+          actor: 'ai',
+          customerId: profile.customer.id,
+          details: { context: 'chat_lookup', lineUserId: userId, mode: 'salon' },
+        }).catch(() => {});
       }
     } catch (err) {
       console.warn('[Supabase] LINE顧客検索エラー:', err.message);
@@ -781,6 +787,13 @@ async function handleFreelanceMode(event, tenant) {
           setDisplayName(userId, (profile.customer.customer_name || profile.customer.name));
         }
         console.log(`[Freelance] 顧客特定: ${(profile.customer.customer_name || profile.customer.name)}`);
+        // 監査ログ: AIによる顧客カルテ参照
+        logCustomerAccess({
+          action: 'customer_view',
+          actor: 'ai',
+          customerId: profile.customer.id,
+          details: { context: 'chat_lookup', lineUserId: userId, tenantId: tenant.id },
+        }).catch(() => {});
       }
     } catch (err) {
       console.warn('[Freelance] 顧客検索エラー:', err.message);
@@ -852,9 +865,30 @@ async function handleFreelanceMode(event, tenant) {
       timestamp: new Date(),
     });
 
+    // 監査ログ: AI応答
+    logCustomerAccess({
+      action: 'ai_response',
+      actor: 'ai',
+      customerId: session.customerProfile?.customer?.id || null,
+      details: {
+        lineUserId: userId,
+        tenantId: tenant.id,
+        responseLength: cleanResponse.length,
+        isHandoff: needsHandoff,
+      },
+    }).catch(() => {});
+
     // 引き継ぎが必要な場合、本人に通知
     if (needsHandoff) {
       setStatus(userId, 'handoff_to_staff');
+
+      // 監査ログ: スタッフ引き継ぎ
+      logCustomerAccess({
+        action: 'staff_handoff',
+        actor: 'staff:auto',
+        customerId: session.customerProfile?.customer?.id || null,
+        details: { lineUserId: userId, tenantId: tenant.id, reason: 'ai_triggered' },
+      }).catch(() => {});
 
       const handoffData = buildFreelanceHandoffData(session);
 

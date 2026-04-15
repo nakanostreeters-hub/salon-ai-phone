@@ -16,7 +16,7 @@ const { handleIncomingSms } = require("./smsHandler");
 const { handleSlackEvent } = require("./slackHandler");
 const { generateResponse, clearHistory, getWelcomeMessage } = require("./ai-receptionist");
 const KarteLookup = require("./karte-lookup");
-const { getCustomerProfile } = require("./supabase-client");
+const { getCustomerProfile, logCustomerAccess } = require("./supabase-client");
 const lineWebhookRouter = require("./routes/line");
 const { handleSlackReplyToLine, threadToLineUser } = require("./routes/line");
 const apiRouter = require("./routes/api");
@@ -156,6 +156,12 @@ app.get("/chat/:sessionId", async (req, res) => {
           session.customerName = (profile.customer.customer_name || profile.customer.name);
           session.name = (profile.customer.customer_name || profile.customer.name);
           console.log(`[Supabase] 顧客特定: ${(profile.customer.customer_name || profile.customer.name)}`);
+          logCustomerAccess({
+            action: 'customer_view',
+            actor: 'ai',
+            customerId: profile.customer.id,
+            details: { context: 'chat_lookup', sessionId, source: 'web_chat' },
+          }).catch(() => {});
         }
       } catch (err) {
         console.warn('[Supabase] 検索エラー:', err.message);
@@ -221,6 +227,12 @@ app.post("/api/chat/create", async (req, res) => {
         session.customerName = (profile.customer.customer_name || profile.customer.name);
         session.name = (profile.customer.customer_name || profile.customer.name);
         console.log(`[Supabase] 顧客特定: ${(profile.customer.customer_name || profile.customer.name)}`);
+        logCustomerAccess({
+          action: 'customer_view',
+          actor: 'ai',
+          customerId: profile.customer.id,
+          details: { context: 'chat_lookup', sessionId, source: 'web_chat_create' },
+        }).catch(() => {});
       }
     } catch (err) {
       console.warn('[Supabase] 検索エラー:', err.message);

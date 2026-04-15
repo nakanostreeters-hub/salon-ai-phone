@@ -607,6 +607,7 @@ router.post('/chats/:lineUserId/reply', authMiddleware, async (req, res) => {
     const { error } = await req.supabase
       .from('conversation_logs')
       .insert({
+        salon_id: process.env.SALON_ID || null,
         tenant_id: tenant.id,
         line_user_id: req.params.lineUserId,
         customer_message: '（スタッフ返信）',
@@ -618,6 +619,20 @@ router.post('/chats/:lineUserId/reply', authMiddleware, async (req, res) => {
       });
 
     if (error) throw error;
+
+    // 監査ログ: スタッフ返信をstaff_handoffとして記録
+    const staffName = req.user?.user_metadata?.name || req.user?.email || 'unknown';
+    try {
+      await req.supabase.rpc('log_customer_access', {
+        p_salon_id: process.env.SALON_ID || tenant.id,
+        p_action: 'staff_handoff',
+        p_actor: `staff:${staffName}`,
+        p_customer_id: null,
+        p_details: { lineUserId: req.params.lineUserId, context: 'chat_reply' },
+      });
+    } catch (auditErr) {
+      console.warn('[Audit] スタッフ返信ログ失敗:', auditErr.message);
+    }
 
     res.json({ success: true });
   } catch (err) {

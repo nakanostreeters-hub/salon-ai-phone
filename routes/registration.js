@@ -6,6 +6,7 @@
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const { createClient } = require('@supabase/supabase-js');
+const { logCustomerAccess } = require('../supabase-client');
 
 const router = express.Router();
 
@@ -186,7 +187,7 @@ router.post('/customer', async (req, res) => {
     age_group: age || null,
     stylist: stylist || null,
     memo: memo || null,
-    salon_id: salonId || null,
+    salon_id: salonId || process.env.SALON_ID || null,
     updated_at: now,
   };
 
@@ -207,6 +208,12 @@ router.post('/customer', async (req, res) => {
         .select()
         .single();
       if (error) throw error;
+      logCustomerAccess({
+        action: 'customer_update',
+        actor: 'staff:registration',
+        customerId: data?.id,
+        details: { context: 'registration_update', source: 'registration_form' },
+      }).catch(() => {});
       return res.json({ success: true, mode: 'updated', customer: data });
     } else {
       const { data, error } = await sb
@@ -215,6 +222,12 @@ router.post('/customer', async (req, res) => {
         .select()
         .single();
       if (error) throw error;
+      logCustomerAccess({
+        action: 'customer_update',
+        actor: 'staff:registration',
+        customerId: data?.id,
+        details: { context: 'registration_create', source: 'registration_form' },
+      }).catch(() => {});
       return res.json({ success: true, mode: 'created', customer: data });
     }
   } catch (err) {

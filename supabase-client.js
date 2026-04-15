@@ -136,6 +136,7 @@ async function saveConversationLog(logData) {
   }
 
   const row = {
+    salon_id: logData.salonId || process.env.SALON_ID || null,
     tenant_id: logData.tenantId,
     customer_id: logData.customerId || null,
     line_user_id: logData.lineUserId,
@@ -191,6 +192,44 @@ async function uploadImageToStorage(buffer, filename, contentType = 'image/jpeg'
   return data?.publicUrl || null;
 }
 
+// ============================================
+// 監査ログ（audit_logs）— Supabase RPC: log_customer_access
+// ============================================
+/**
+ * @param {object} params
+ * @param {string} params.action     - 'customer_view' | 'ai_response' | 'staff_handoff' | 'customer_update' など
+ * @param {string} [params.actor]    - 'ai' | 'staff:<name>' など。デフォルト 'ai'
+ * @param {string|number} [params.customerId]
+ * @param {object} [params.details]  - 任意のJSONメタデータ
+ * @param {string} [params.salonId]  - 省略時は process.env.SALON_ID
+ */
+async function logCustomerAccess(params = {}) {
+  const client = getClient();
+  if (!client) return;
+
+  const salonId = params.salonId || process.env.SALON_ID;
+  if (!salonId) {
+    // SALON_ID未設定環境では監査ログをスキップ（致命的にしない）
+    return;
+  }
+  if (!params.action) return;
+
+  try {
+    const { error } = await client.rpc('log_customer_access', {
+      p_salon_id: salonId,
+      p_action: params.action,
+      p_actor: params.actor || 'ai',
+      p_customer_id: params.customerId != null ? String(params.customerId) : null,
+      p_details: params.details || {},
+    });
+    if (error) {
+      console.warn('[Audit] log_customer_access エラー:', error.message);
+    }
+  } catch (err) {
+    console.warn('[Audit] log_customer_access 例外:', err.message);
+  }
+}
+
 // line_user_id にこれまでの conversation_logs があるかチェック
 async function hasPriorConversation(lineUserId) {
   const client = getClient();
@@ -217,4 +256,5 @@ module.exports = {
   saveConversationLog,
   uploadImageToStorage,
   hasPriorConversation,
+  logCustomerAccess,
 };
