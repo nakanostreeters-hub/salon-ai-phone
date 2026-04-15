@@ -95,6 +95,75 @@ function getTenantLineBlobClient(tenant) {
   return blob;
 }
 
+// ─── 「考えてる感」を出す返信遅延ロジック ───
+function getJstHourForDelay() {
+  const h = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tokyo',
+    hour: '2-digit',
+    hour12: false,
+  }).format(new Date());
+  const n = parseInt(h, 10);
+  return Number.isFinite(n) ? n % 24 : 0;
+}
+
+/**
+ * AIの返信文の長さと時刻から自然な遅延ms値を返す
+ *   - 短文(<=30): 3000-5000
+ *   - 通常(31-80): 5000-8000
+ *   - 長文(>=81): 6000-12000
+ *   - 20%の確率で1000-2000ms即レス
+ *   - 深夜(23-5:59) なら +5000ms（最大15000まで）
+ */
+function computeReplyDelayMs(text, hourJST) {
+  const len = (text || '').length;
+  let baseMin, baseMax;
+  if (len <= 30) { baseMin = 3000; baseMax = 5000; }
+  else if (len <= 80) { baseMin = 5000; baseMax = 8000; }
+  else { baseMin = 6000; baseMax = 12000; }
+
+  // 20% で即レス
+  if (Math.random() < 0.2) {
+    return 1000 + Math.floor(Math.random() * 1000);
+  }
+
+  let delay = baseMin + Math.floor(Math.random() * (baseMax - baseMin));
+
+  // 深夜は +5s（上限15s）
+  const isLateNight = hourJST >= 23 || hourJST < 6;
+  if (isLateNight) {
+    delay = Math.min(delay + 5000, 15000);
+  }
+
+  return delay;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// LINEのチャット読み込み中インジケーター（最大60秒、5秒刻み）
+async function showTypingIndicator(tenant, userId, delayMs) {
+  if (!tenant || !tenant.lineChannelAccessToken || !userId) return;
+  // 5秒単位に切り上げ、最低5秒、最大60秒
+  const seconds = Math.min(60, Math.max(5, Math.ceil(delayMs / 5000) * 5));
+  try {
+    const res = await fetch('https://api.line.me/v2/bot/chat/loading/start', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${tenant.lineChannelAccessToken}`,
+      },
+      body: JSON.stringify({ chatId: userId, loadingSeconds: seconds }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.warn(`[LINE Typing] インジケーター失敗 ${res.status}: ${body.slice(0, 200)}`);
+    }
+  } catch (err) {
+    console.warn('[LINE Typing] インジケーターエラー:', err.message);
+  }
+}
+
 // LINEから画像データを取得してSupabase Storageにアップロード
 async function downloadLineImageAndUpload(messageId, tenant, userId) {
   const blob = getTenantLineBlobClient(tenant);
@@ -731,7 +800,12 @@ async function handleFreelanceMode(event, tenant) {
 
   // AIカウンセリング応答生成
   try {
+    // 生成と並行して即座に「考えてる感」を出す（最低5秒のローディング）
+    showTypingIndicator(tenant, userId, 5000).catch(() => {});
+
+    const genStart = Date.now();
     const aiResponse = await generateFreelanceResponse(session, tenant);
+    const genElapsed = Date.now() - genStart;
 
     // [HANDOFF] タグの処理
     const needsHandoff = aiResponse.includes('[HANDOFF]');
@@ -739,6 +813,20 @@ async function handleFreelanceMode(event, tenant) {
 
     // 会話履歴にAI応答を追加
     addMessage(userId, 'assistant', cleanResponse);
+
+    // 「考えてる感」の遅延を計算（生成にかかった時間は差し引く）
+    const hourJST = getJstHourForDelay();
+    const targetDelayMs = computeReplyDelayMs(cleanResponse, hourJST);
+    const remainingDelay = Math.max(0, targetDelayMs - genElapsed);
+
+    if (remainingDelay > 0) {
+      // 遅延中はインジケーターを再延長（残り遅延に合わせる）
+      showTypingIndicator(tenant, userId, remainingDelay).catch(() => {});
+      console.log(`[Freelance Delay] len=${cleanResponse.length} hourJST=${hourJST} target=${targetDelayMs}ms gen=${genElapsed}ms wait=${remainingDelay}ms`);
+      await sleep(remainingDelay);
+    } else {
+      console.log(`[Freelance Delay] 生成に${genElapsed}ms掛かったため遅延スキップ (target=${targetDelayMs}ms)`);
+    }
 
     // LINE返信（テナント別クライアント使用）
     await replyToLineWithClient(replyToken, cleanResponse, tenant);
