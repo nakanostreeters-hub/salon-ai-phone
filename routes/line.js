@@ -19,6 +19,7 @@ const {
   setConversationState,
 } = require('../services/lineCounselingSession');
 const { classifyHandoffMessage, scheduleSla, clearSlaTimers } = require('../services/handoffMode');
+const { runLinkingFlow } = require('../services/customerLinking');
 const { buildLineCounselingPrompt } = require('../prompts/lineCounseling');
 const { buildFreelanceCounselingPrompt } = require('../prompts/freelanceCounseling');
 const { findStaffByName } = require('../config/staff');
@@ -996,6 +997,52 @@ async function handleFreelanceMode(event, tenant) {
     return;
   }
 
+  // ─── 顧客紐づけフロー（未紐づけのお客様のみ） ───
+  // 画像メッセージ中は紐づけフローに乗せない（テキストの返答が必要なため）
+  if (!session.customerProfile && !isImage) {
+    const linkingHelpers = {
+      sendReply: async (text) => {
+        try {
+          await replyToLineWithClient(replyToken, text, tenant);
+          // 会話ログに保存
+          await saveConversationLog({
+            tenantId: tenant.id,
+            customerId: null,
+            lineUserId: userId,
+            customerMessage: userMessage,
+            aiResponse: text,
+            messageType: 'text',
+            timestamp: new Date(),
+          });
+        } catch (err) {
+          console.warn('[Linking] 返信失敗:', err.message);
+        }
+      },
+      setDisplayName: (name) => {
+        session.displayName = name;
+        setDisplayName(userId, name);
+      },
+      setCustomerProfile: (profile) => {
+        session.customerProfile = profile;
+      },
+      markEscalated: () => {
+        setStatus(userId, 'handoff_to_staff');
+        patchSession(userId, {
+          conversationState: 'handoff_pending',
+          handoffStartedAt: Date.now(),
+        });
+        scheduleHandoffSla(session, tenant);
+      },
+    };
+
+    const linkResult = await runLinkingFlow(session, userId, userMessage, linkingHelpers);
+    if (linkResult.handled) {
+      console.log(`[Linking] ${userId} 紐づけフロー継続 state=${session.linking?.state}`);
+      return;
+    }
+    // handled=false なら紐づけフロー外 → 通常AIへフォールスルー
+  }
+
   // 会話履歴にユーザーメッセージ追加
   addMessage(userId, 'user', userMessage);
 
@@ -1127,7 +1174,12 @@ async function generateFreelanceResponse(session, tenant) {
   // DBに過去ログなし かつ このセッション内でも初めてのuser発話（== 1）なら初回
   const isFirstContact = !hadPrior && userTurnCountForGreeting <= 1;
 
-  let systemPrompt = buildFreelanceCounselingPrompt(tenant, karteContext, { isFirstContact });
+  const customerName =
+    session.customerProfile?.customer?.customer_name ||
+    session.customerProfile?.customer?.name ||
+    session.displayName ||
+    null;
+  let systemPrompt = buildFreelanceCounselingPrompt(tenant, karteContext, { isFirstContact, customerName });
 
   // 2往復未満は引き継ぎ禁止
   const userTurnCount = session.conversationHistory.filter(m => m.role === 'user').length;
