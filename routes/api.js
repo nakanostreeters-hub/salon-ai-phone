@@ -574,16 +574,22 @@ router.get('/chats/:lineUserId', authMiddleware, async (req, res) => {
       customer = cust;
     }
 
-    // 来店履歴
+    // 来店履歴（visits は karte_no で顧客に紐づく）
     let visits = [];
-    if (customer) {
+    if (customer && customer.karte_no != null) {
       const { data: v } = await req.supabase
         .from('visits')
         .select('*')
-        .eq('customer_id', customer.id)
-        .order('visited_at', { ascending: false })
+        .eq('karte_no', customer.karte_no)
+        .order('start_time', { ascending: false })
         .limit(10);
-      visits = v || [];
+      visits = (v || []).map(row => ({
+        ...row,
+        visited_at: row.start_time,
+        staff_name: row.main_staff,
+        menu: row.treatment_detail,
+        total_amount: (row.treatment_total || 0) + (row.retail_total || 0) + (row.tax_amount || 0),
+      }));
     }
 
     res.json({ messages: data, customer, visits });
@@ -660,6 +666,9 @@ router.get('/customers', authMiddleware, async (req, res) => {
   try {
     const { search, segment, sort, order, limit, offset } = req.query;
 
+    // ソート対象のフィールド正規化（古いJSがsegmentでソートを要求する可能性対応）
+    const sortFieldMap = { segment: 'customer_segment' };
+
     let query = req.supabase
       .from('customers')
       .select('*', { count: 'exact' });
@@ -669,13 +678,14 @@ router.get('/customers', authMiddleware, async (req, res) => {
       query = query.or(`customer_name.ilike.%${search}%,yomigana.ilike.%${search}%,phone.ilike.%${search}%`);
     }
 
-    // セグメント
+    // セグメント（customer_segment カラムで絞り込み）
     if (segment && segment !== 'all') {
-      query = query.eq('segment', segment);
+      query = query.eq('customer_segment', segment);
     }
 
     // ソート
-    const sortField = sort || 'created_at';
+    const rawSort = sort || 'created_at';
+    const sortField = sortFieldMap[rawSort] || rawSort;
     const sortOrder = order === 'asc' ? true : false;
     query = query.order(sortField, { ascending: sortOrder });
 
@@ -690,17 +700,32 @@ router.get('/customers', authMiddleware, async (req, res) => {
     // 各顧客の会話ログを取得 → 最終メッセージ & 接客タイプ判定
     const customers = data || [];
     const customerIds = customers.map(c => c.id).filter(Boolean);
+    const karteByCustomer = {};
+    for (const c of customers) {
+      if (c.karte_no != null) karteByCustomer[c.id] = c.karte_no;
+    }
+    const karteNos = Object.values(karteByCustomer);
+
     let lastMsgMap = {};
     let logsByCustomer = {};
     let visitsByCustomer = {};
-    if (customerIds.length) {
+    if (karteNos.length) {
       const { data: visitsAll } = await req.supabase
         .from('visits')
-        .select('customer_id, menu, visited_at')
-        .in('customer_id', customerIds)
-        .order('visited_at', { ascending: false });
+        .select('karte_no, treatment_detail, start_time')
+        .in('karte_no', karteNos)
+        .order('start_time', { ascending: false });
+      // customerId → visits にマッピング（karte_no経由）
       for (const v of visitsAll || []) {
-        (visitsByCustomer[v.customer_id] = visitsByCustomer[v.customer_id] || []).push(v);
+        for (const [cid, kno] of Object.entries(karteByCustomer)) {
+          if (kno === v.karte_no) {
+            (visitsByCustomer[cid] = visitsByCustomer[cid] || []).push({
+              ...v,
+              menu: v.treatment_detail,
+              visited_at: v.start_time,
+            });
+          }
+        }
       }
     }
     if (customerIds.length) {
@@ -725,6 +750,8 @@ router.get('/customers', authMiddleware, async (req, res) => {
       const riskFlags = analyzeTreatmentRisks(visitsByCustomer[c.id] || []);
       return {
         ...c,
+        // 互換: 旧フロントエンドは c.segment を参照するので customer_segment からエイリアス
+        segment: c.customer_segment || null,
         last_message_at: lastMsgMap[c.id]?.at || null,
         last_message_text: lastMsgMap[c.id]?.text || null,
         service_style: style,
@@ -750,21 +777,27 @@ router.get('/customers/:id', authMiddleware, async (req, res) => {
 
     if (error) throw error;
 
-    // 来店履歴
-    const { data: visits } = await req.supabase
-      .from('visits')
-      .select('*')
-      .eq('customer_id', req.params.id)
-      .order('visited_at', { ascending: false })
-      .limit(20);
+    // 来店履歴（visitsはkarte_noで顧客に紐づく）
+    let visits = [];
+    if (customer.karte_no != null) {
+      const { data: vs } = await req.supabase
+        .from('visits')
+        .select('*')
+        .eq('karte_no', customer.karte_no)
+        .order('start_time', { ascending: false })
+        .limit(20);
+      visits = (vs || []).map(v => ({
+        ...v,
+        // 互換: 旧コード/旧UIは visited_at / staff_name / menu / total_amount を期待
+        visited_at: v.start_time,
+        staff_name: v.main_staff,
+        menu: v.treatment_detail,
+        total_amount: (v.treatment_total || 0) + (v.retail_total || 0) + (v.tax_amount || 0),
+      }));
+    }
 
-    // 購入履歴
-    const { data: purchases } = await req.supabase
-      .from('purchases')
-      .select('*')
-      .eq('customer_id', req.params.id)
-      .order('purchased_at', { ascending: false })
-      .limit(20);
+    // 購入履歴テーブルは現状未作成のため空配列で返す
+    const purchases = [];
 
     // 会話ログ
     let conversationLogs = [];
@@ -808,27 +841,30 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
     const todayStr = today.toISOString().split('T')[0];
     const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
 
+    const visitAmount = (v) =>
+      (v.treatment_total || 0) + (v.retail_total || 0) + (v.tax_amount || 0);
+
     // 本日の来店数
     const { count: todayVisits } = await req.supabase
       .from('visits')
       .select('*', { count: 'exact', head: true })
-      .gte('visited_at', todayStr)
-      .lt('visited_at', todayStr + 'T23:59:59');
+      .gte('start_time', todayStr)
+      .lt('start_time', todayStr + 'T23:59:59');
 
     // 本日の売上
     const { data: todaySalesData } = await req.supabase
       .from('visits')
-      .select('total_amount')
-      .gte('visited_at', todayStr)
-      .lt('visited_at', todayStr + 'T23:59:59');
-    const todaySales = (todaySalesData || []).reduce((sum, v) => sum + (v.total_amount || 0), 0);
+      .select('treatment_total, retail_total, tax_amount')
+      .gte('start_time', todayStr)
+      .lt('start_time', todayStr + 'T23:59:59');
+    const todaySales = (todaySalesData || []).reduce((sum, v) => sum + visitAmount(v), 0);
 
     // 月間売上
     const { data: monthSalesData } = await req.supabase
       .from('visits')
-      .select('total_amount')
-      .gte('visited_at', monthStart);
-    const monthSales = (monthSalesData || []).reduce((sum, v) => sum + (v.total_amount || 0), 0);
+      .select('treatment_total, retail_total, tax_amount')
+      .gte('start_time', monthStart);
+    const monthSales = (monthSalesData || []).reduce((sum, v) => sum + visitAmount(v), 0);
 
     // 顧客数
     const { count: totalCustomers } = await req.supabase
@@ -848,16 +884,16 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
     // customers テーブルから全顧客の来店情報を取得
     const { data: allCustomers } = await req.supabase
       .from('customers')
-      .select('id, segment, visit_count, last_visit_at');
+      .select('id, customer_segment, visit_count, last_visit_at');
 
     const segments = { vip: 0, regular: 0, churn_risk: 0, new: 0, unknown: 0 };
     const now = Date.now();
     const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000;
 
     (allCustomers || []).forEach(c => {
-      // segment カラムがある場合はそれを使う
-      if (c.segment && segments[c.segment] !== undefined) {
-        segments[c.segment]++;
+      // customer_segment カラムがある場合はそれを使う
+      if (c.customer_segment && segments[c.customer_segment] !== undefined) {
+        segments[c.customer_segment]++;
         return;
       }
 
@@ -908,17 +944,17 @@ router.get('/dashboard/staff', authMiddleware, async (req, res) => {
 
     const { data: visits } = await req.supabase
       .from('visits')
-      .select('staff_name, total_amount')
-      .gte('visited_at', monthStart);
+      .select('main_staff, treatment_total, retail_total, tax_amount')
+      .gte('start_time', monthStart);
 
     const staffMap = {};
     (visits || []).forEach(v => {
-      const name = v.staff_name || '未設定';
+      const name = v.main_staff || '未設定';
       if (!staffMap[name]) {
         staffMap[name] = { name, visitCount: 0, sales: 0 };
       }
       staffMap[name].visitCount++;
-      staffMap[name].sales += v.total_amount || 0;
+      staffMap[name].sales += (v.treatment_total || 0) + (v.retail_total || 0) + (v.tax_amount || 0);
     });
 
     const staffStats = Object.values(staffMap).sort((a, b) => b.sales - a.sales);
@@ -989,21 +1025,21 @@ router.get('/dashboard/unanswered', authMiddleware, async (req, res) => {
 // GET /api/dashboard/alerts - 離反リスクアラート
 router.get('/dashboard/alerts', authMiddleware, async (req, res) => {
   try {
-    // 1. segment が churn_risk の顧客
+    // 1. customer_segment が churn_risk の顧客
     const { data: segmentRisk } = await req.supabase
       .from('customers')
-      .select('id, customer_name, phone, last_visit_at, segment')
-      .eq('segment', 'churn_risk')
+      .select('id, customer_name, phone, last_visit_at, customer_segment')
+      .eq('customer_segment', 'churn_risk')
       .order('last_visit_at', { ascending: true })
       .limit(20);
 
-    // 2. segment がなくても最終来店から60日以上経過した顧客
+    // 2. customer_segment がなくても最終来店から60日以上経過した顧客
     const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
     const { data: dateRisk } = await req.supabase
       .from('customers')
-      .select('id, customer_name, phone, last_visit_at, segment')
+      .select('id, customer_name, phone, last_visit_at, customer_segment')
       .lt('last_visit_at', sixtyDaysAgo)
-      .neq('segment', 'churn_risk') // 重複を避ける
+      .neq('customer_segment', 'churn_risk') // 重複を避ける
       .order('last_visit_at', { ascending: true })
       .limit(20);
 
@@ -1016,6 +1052,8 @@ router.get('/dashboard/alerts', authMiddleware, async (req, res) => {
       alerts.push({
         ...c,
         customer_name: getCustomerName(c),
+        // 旧フロント互換
+        segment: c.customer_segment || null,
       });
     }
 
@@ -1130,20 +1168,38 @@ router.get('/dashboard/proactive-suggestions', authMiddleware, async (req, res) 
 
     const { data: customers, error: custErr } = await req.supabase
       .from('customers')
-      .select('id, customer_name, phone, line_id, last_visit_at, visit_count')
+      .select('id, karte_no, customer_name, phone, line_id, last_visit_at, visit_count')
       .limit(500);
     if (custErr) throw custErr;
 
     const customerIds = (customers || []).map(c => c.id).filter(Boolean);
+    const karteByCustomer = {};
+    const karteToCustomer = {};
+    for (const c of customers || []) {
+      if (c.karte_no != null) {
+        karteByCustomer[c.id] = c.karte_no;
+        karteToCustomer[c.karte_no] = c.id;
+      }
+    }
+    const karteNos = Object.values(karteByCustomer);
+
     let visitsByCustomer = {};
-    if (customerIds.length) {
+    if (karteNos.length) {
       const { data: visitsAll } = await req.supabase
         .from('visits')
-        .select('customer_id, menu, visited_at, total_amount')
-        .in('customer_id', customerIds)
-        .order('visited_at', { ascending: false });
+        .select('karte_no, treatment_detail, start_time, treatment_total, retail_total, tax_amount')
+        .in('karte_no', karteNos)
+        .order('start_time', { ascending: false });
       for (const v of visitsAll || []) {
-        (visitsByCustomer[v.customer_id] = visitsByCustomer[v.customer_id] || []).push(v);
+        const cid = karteToCustomer[v.karte_no];
+        if (!cid) continue;
+        const visit = {
+          ...v,
+          menu: v.treatment_detail,
+          visited_at: v.start_time,
+          total_amount: (v.treatment_total || 0) + (v.retail_total || 0) + (v.tax_amount || 0),
+        };
+        (visitsByCustomer[cid] = visitsByCustomer[cid] || []).push(visit);
       }
     }
 

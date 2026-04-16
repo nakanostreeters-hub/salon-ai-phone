@@ -65,41 +65,38 @@ async function findCustomerByLineId(lineId) {
 }
 
 // 顧客の直近5回の来店履歴を取得
-async function getRecentVisits(customerId, limit = 5) {
+async function getRecentVisits(customer, limit = 5) {
   const client = getClient();
   if (!client) return [];
+
+  // customerが未指定 or karte_no が無ければ空配列
+  const karteNo = customer && typeof customer === 'object' ? customer.karte_no : null;
+  if (karteNo == null) return [];
 
   const { data, error } = await client
     .from('visits')
     .select('*')
-    .eq('customer_id', customerId)
-    .order('visited_at', { ascending: false })
+    .eq('karte_no', karteNo)
+    .order('start_time', { ascending: false })
     .limit(limit);
 
   if (error) {
     console.error('[Supabase] 来店履歴取得エラー:', error.message);
     return [];
   }
-  return data || [];
+  // 旧コード互換の別名付きで返す
+  return (data || []).map(v => ({
+    ...v,
+    visited_at: v.start_time,
+    staff_name: v.main_staff,
+    menu: v.treatment_detail,
+    total_amount: (v.treatment_total || 0) + (v.retail_total || 0) + (v.tax_amount || 0),
+  }));
 }
 
-// 顧客の購入履歴を取得
-async function getRecentPurchases(customerId, limit = 5) {
-  const client = getClient();
-  if (!client) return [];
-
-  const { data, error } = await client
-    .from('purchases')
-    .select('*')
-    .eq('customer_id', customerId)
-    .order('purchased_at', { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error('[Supabase] 購入履歴取得エラー:', error.message);
-    return [];
-  }
-  return data || [];
+// 顧客の購入履歴を取得（purchases テーブルは現状未作成のため空配列を返す）
+async function getRecentPurchases() {
+  return [];
 }
 
 // 顧客の全情報をまとめて取得
@@ -114,8 +111,8 @@ async function getCustomerProfile(identifier, type = 'phone') {
 
     if (!customer) return null;
 
-    const visits = await getRecentVisits(customer.id);
-    const purchases = await getRecentPurchases(customer.id);
+    const visits = await getRecentVisits(customer);
+    const purchases = await getRecentPurchases();
 
     return { customer, visits, purchases };
   } catch (err) {
