@@ -43,7 +43,7 @@ function getLineClientForTenant(tenant) {
 
 // ─── ヘルパー: 顧客名を取得 ───
 function getCustomerName(row) {
-  return row.customer_name || row.name || '';
+  return row?.customer_name || '';
 }
 
 // ─── ヘルパー: 経過時間から優先度判定 ───
@@ -413,18 +413,28 @@ async function authMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const sb = getSupabase();
-  if (!sb) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
     return res.status(503).json({ error: 'Database unavailable' });
   }
 
   try {
-    const { data: { user }, error } = await sb.auth.getUser(token);
+    // リクエストごとに、ユーザーのJWTを持つ専用クライアントを生成する。
+    // これにより後続クエリは RLS が適用される（anonクライアント共有をやめる）。
+    const userClient = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_ANON_KEY,
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      }
+    );
+
+    const { data: { user }, error } = await userClient.auth.getUser(token);
     if (error || !user) {
       return res.status(401).json({ error: 'Invalid token' });
     }
     req.user = user;
-    req.supabase = sb;
+    req.supabase = userClient;
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Authentication failed' });
@@ -518,7 +528,7 @@ router.get('/chats', authMiddleware, async (req, res) => {
     if (customerIds.length > 0) {
       const { data: customers } = await req.supabase
         .from('customers')
-        .select('id, customer_name, name')
+        .select('id, customer_name')
         .in('id', customerIds);
       if (customers) {
         customerNames = Object.fromEntries(
@@ -953,7 +963,7 @@ router.get('/dashboard/unanswered', authMiddleware, async (req, res) => {
     if (customerIds.length) {
       const { data: customers } = await req.supabase
         .from('customers')
-        .select('id, customer_name, name')
+        .select('id, customer_name')
         .in('id', customerIds);
       if (customers) {
         nameMap = Object.fromEntries(customers.map(c => [c.id, getCustomerName(c)]));
@@ -982,7 +992,7 @@ router.get('/dashboard/alerts', authMiddleware, async (req, res) => {
     // 1. segment が churn_risk の顧客
     const { data: segmentRisk } = await req.supabase
       .from('customers')
-      .select('id, customer_name, name, phone, last_visit_at, segment')
+      .select('id, customer_name, phone, last_visit_at, segment')
       .eq('segment', 'churn_risk')
       .order('last_visit_at', { ascending: true })
       .limit(20);
@@ -991,7 +1001,7 @@ router.get('/dashboard/alerts', authMiddleware, async (req, res) => {
     const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
     const { data: dateRisk } = await req.supabase
       .from('customers')
-      .select('id, customer_name, name, phone, last_visit_at, segment')
+      .select('id, customer_name, phone, last_visit_at, segment')
       .lt('last_visit_at', sixtyDaysAgo)
       .neq('segment', 'churn_risk') // 重複を避ける
       .order('last_visit_at', { ascending: true })
@@ -1069,7 +1079,7 @@ router.get('/dashboard/ai-suggestions', authMiddleware, async (req, res) => {
     if (customerIds.length) {
       const { data: customers } = await req.supabase
         .from('customers')
-        .select('id, customer_name, name')
+        .select('id, customer_name')
         .in('id', customerIds);
       if (customers) {
         nameMap = Object.fromEntries(customers.map(c => [c.id, getCustomerName(c)]));
@@ -1120,7 +1130,7 @@ router.get('/dashboard/proactive-suggestions', authMiddleware, async (req, res) 
 
     const { data: customers, error: custErr } = await req.supabase
       .from('customers')
-      .select('id, customer_name, name, phone, line_id, last_visit_at, visit_count')
+      .select('id, customer_name, phone, line_id, last_visit_at, visit_count')
       .limit(500);
     if (custErr) throw custErr;
 

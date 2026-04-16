@@ -153,9 +153,9 @@ app.get("/chat/:sessionId", async (req, res) => {
         const profile = await getCustomerProfile(phone, 'phone');
         if (profile) {
           session.customerProfile = profile;
-          session.customerName = (profile.customer.customer_name || profile.customer.name);
-          session.name = (profile.customer.customer_name || profile.customer.name);
-          console.log(`[Supabase] 顧客特定: ${(profile.customer.customer_name || profile.customer.name)}`);
+          session.customerName = (profile.customer.customer_name);
+          session.name = (profile.customer.customer_name);
+          console.log(`[Supabase] 顧客特定: ${(profile.customer.customer_name)}`);
           logCustomerAccess({
             action: 'customer_view',
             actor: 'ai',
@@ -224,9 +224,9 @@ app.post("/api/chat/create", async (req, res) => {
       const profile = await getCustomerProfile(phone, 'phone');
       if (profile) {
         session.customerProfile = profile;
-        session.customerName = (profile.customer.customer_name || profile.customer.name);
-        session.name = (profile.customer.customer_name || profile.customer.name);
-        console.log(`[Supabase] 顧客特定: ${(profile.customer.customer_name || profile.customer.name)}`);
+        session.customerName = (profile.customer.customer_name);
+        session.name = (profile.customer.customer_name);
+        console.log(`[Supabase] 顧客特定: ${(profile.customer.customer_name)}`);
         logCustomerAccess({
           action: 'customer_view',
           actor: 'ai',

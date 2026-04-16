@@ -371,11 +371,11 @@ async function handleEvent(event) {
       const profile = await getCustomerProfile(userId, 'line_id');
       if (profile) {
         session.customerProfile = profile;
-        if (!session.displayName && (profile.customer.customer_name || profile.customer.name)) {
-          session.displayName = (profile.customer.customer_name || profile.customer.name);
-          setDisplayName(userId, (profile.customer.customer_name || profile.customer.name));
+        if (!session.displayName && (profile.customer.customer_name)) {
+          session.displayName = (profile.customer.customer_name);
+          setDisplayName(userId, (profile.customer.customer_name));
         }
-        console.log(`[Supabase] LINE顧客特定: ${(profile.customer.customer_name || profile.customer.name)}`);
+        console.log(`[Supabase] LINE顧客特定: ${(profile.customer.customer_name)}`);
         logCustomerAccess({
           action: 'customer_view',
           actor: 'ai',
@@ -973,11 +973,11 @@ async function handleFreelanceMode(event, tenant) {
       const profile = await getCustomerProfile(userId, 'line_id');
       if (profile) {
         session.customerProfile = profile;
-        if (!session.displayName && (profile.customer.customer_name || profile.customer.name)) {
-          session.displayName = (profile.customer.customer_name || profile.customer.name);
-          setDisplayName(userId, (profile.customer.customer_name || profile.customer.name));
+        if (!session.displayName && (profile.customer.customer_name)) {
+          session.displayName = (profile.customer.customer_name);
+          setDisplayName(userId, (profile.customer.customer_name));
         }
-        console.log(`[Freelance] 顧客特定: ${(profile.customer.customer_name || profile.customer.name)}`);
+        console.log(`[Freelance] 顧客特定: ${(profile.customer.customer_name)}`);
         // 監査ログ: AIによる顧客カルテ参照
         logCustomerAccess({
           action: 'customer_view',

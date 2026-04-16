@@ -252,10 +252,10 @@ async function hasPriorConversation(lineUserId) {
 // ============================================
 /**
  * 名前バリエーションで顧客を検索
- *  - 完全一致 (customer_name / name)
- *  - スペース除去一致 (customer_name のスペースを取って一致)
- *  - よみがな完全一致
- *  - 姓だけ or 名だけの部分一致
+ *  - customer_name 完全一致
+ *  - customer_name スペース除去一致
+ *  - yomigana 完全一致
+ *  - 姓だけ or 名だけの部分一致（customer_name / yomigana）
  * @param {string} name - お客様入力の名前
  * @param {string} [salonId] - process.env.SALON_ID にフォールバック
  * @returns {Promise<{customers: object[], matchKind: string}>}
@@ -273,7 +273,6 @@ async function findCustomersByName(name, salonId) {
   if (sid) q1 = q1.eq('salon_id', sid);
   q1 = q1.or([
     `customer_name.eq.${trimmed}`,
-    `name.eq.${trimmed}`,
     `customer_name.eq.${noSpace}`,
     `yomigana.eq.${trimmed}`,
     `yomigana.eq.${noSpace}`,
@@ -291,7 +290,6 @@ async function findCustomersByName(name, salonId) {
   if (sid) q2 = q2.eq('salon_id', sid);
   q2 = q2.or([
     `customer_name.ilike.%${trimmed}%`,
-    `name.ilike.%${trimmed}%`,
     `yomigana.ilike.%${trimmed}%`,
   ].join(','));
   const { data: partial, error: err2 } = await q2.limit(20);

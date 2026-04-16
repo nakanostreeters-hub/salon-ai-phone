@@ -55,7 +55,7 @@ function extractLast4(text) {
 }
 
 function pickName(customer) {
-  return (customer && (customer.customer_name || customer.name || '')) || '';
+  return (customer && customer.customer_name) || '';
 }
 
 function getLinkingState(session) {
