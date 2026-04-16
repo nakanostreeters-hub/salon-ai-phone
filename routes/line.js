@@ -19,6 +19,33 @@ const {
   setConversationState,
 } = require('../services/lineCounselingSession');
 const { classifyHandoffMessage, scheduleSla, clearSlaTimers } = require('../services/handoffMode');
+
+// 引き継ぎ後、15分でAI対応に自動復帰する閾値
+const HANDOFF_AUTO_RELEASE_MS = 15 * 60 * 1000;
+
+/**
+ * handoff 状態のセッションが 15分経過していたら bot_active に戻す。
+ * 戻した場合は true を返す（呼び出し側は通常AIフローへ進む）。
+ */
+function maybeAutoReleaseHandoff(session) {
+  if (!session || session.status !== 'handoff_to_staff') return false;
+  const startedAt = session.handoffStartedAt || 0;
+  if (!startedAt) return false;
+  if (Date.now() - startedAt < HANDOFF_AUTO_RELEASE_MS) return false;
+
+  const userId = session.userId;
+  console.log(`[Handoff Auto-Release] ${userId} 15分経過 → bot_active に復帰`);
+  clearSlaTimers(userId);
+  setStatus(userId, 'counseling');
+  patchSession(userId, {
+    conversationState: 'bot_active',
+    assignedStaffId: null,
+    handoffStartedAt: null,
+    staffLastResponseAt: null,
+    holdingMessageSent: false,
+  });
+  return true;
+}
 const { runLinkingFlow } = require('../services/customerLinking');
 const { buildLineCounselingPrompt } = require('../prompts/lineCounseling');
 const { buildFreelanceCounselingPrompt } = require('../prompts/freelanceCounseling');
@@ -388,11 +415,13 @@ async function handleEvent(event) {
     }
   }
 
-  // スタッフ引き継ぎ済みの場合 → Slackスレッドに転送
+  // スタッフ引き継ぎ済みの場合 → 15分超なら自動解除、それ以外はSlackスレッドに転送
   if (session.status === 'handoff_to_staff') {
-    console.log(`[LINE Webhook] スタッフ対応中 → Slackに転送: ${userId}`);
-    await forwardCustomerMessageToSlack(session, userMessage);
-    return;
+    if (!maybeAutoReleaseHandoff(session)) {
+      console.log(`[LINE Webhook] スタッフ対応中 → Slackに転送: ${userId}`);
+      await forwardCustomerMessageToSlack(session, userMessage);
+      return;
+    }
   }
 
   // 会話履歴にユーザーメッセージ追加
@@ -991,10 +1020,12 @@ async function handleFreelanceMode(event, tenant) {
     }
   }
 
-  // スタッフ引き継ぎ済みの場合 → 分類して条件付きで処理
+  // スタッフ引き継ぎ済みの場合 → 15分超なら自動解除、それ以外は分類して処理
   if (session.status === 'handoff_to_staff') {
-    await handleHandoffModeMessage(session, tenant, userId, userMessage, replyToken, isImage, imageUrl);
-    return;
+    if (!maybeAutoReleaseHandoff(session)) {
+      await handleHandoffModeMessage(session, tenant, userId, userMessage, replyToken, isImage, imageUrl);
+      return;
+    }
   }
 
   // ─── 顧客紐づけフロー（未紐づけのお客様のみ） ───

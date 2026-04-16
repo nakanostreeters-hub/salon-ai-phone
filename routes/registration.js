@@ -5,8 +5,7 @@
 
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
-const { createClient } = require('@supabase/supabase-js');
-const { logCustomerAccess } = require('../supabase-client');
+const { logCustomerAccess, getAdminClient, getAnonClient } = require('../supabase-client');
 
 const router = express.Router();
 
@@ -14,12 +13,11 @@ const router = express.Router();
 router.use(express.json({ limit: '15mb' }));
 
 // ─── Supabase ───
-let supabase = null;
+// 公開フォームからの書き込みはユーザーJWTが無いので、
+// service role クライアント（RLSバイパス）を使う。
+// SERVICE_ROLE_KEY が未設定の環境では anon にフォールバック。
 function getSupabase() {
-  if (!supabase && process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
-    supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
-  }
-  return supabase;
+  return getAdminClient() || getAnonClient();
 }
 
 // ─── Anthropic ───

@@ -4,16 +4,54 @@
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
 
-let supabase = null;
+let anonClient = null;
+let adminClient = null;
 
+/**
+ * サービスロールキーを使うadminクライアント（RLSをバイパス）。
+ * LINE Webhook、監査ログ、システム書き込みなどユーザーJWTを経由しない
+ * サーバー内部処理はこれを使う。SERVICE_ROLE_KEY が無ければ null を返す。
+ */
+function getAdminClient() {
+  if (adminClient) return adminClient;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  adminClient = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return adminClient;
+}
+
+/**
+ * サーバー内部用クライアント。
+ * 優先順位:
+ *   1) SUPABASE_SERVICE_ROLE_KEY があれば admin（RLSバイパス）
+ *   2) 無ければ ANON_KEY でフォールバック（RLSの影響を受ける）
+ */
 function getClient() {
-  if (!supabase && process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
-    supabase = createClient(
+  const admin = getAdminClient();
+  if (admin) return admin;
+  if (!anonClient && process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+    anonClient = createClient(
       process.env.SUPABASE_URL,
       process.env.SUPABASE_ANON_KEY
     );
   }
-  return supabase;
+  return anonClient;
+}
+
+/**
+ * 認証用の anon クライアントを取得（routes/api.js のログイン等で使用）。
+ */
+function getAnonClient() {
+  if (!anonClient && process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+    anonClient = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_ANON_KEY
+    );
+  }
+  return anonClient;
 }
 
 // 電話番号で顧客を検索
@@ -365,4 +403,6 @@ module.exports = {
   findCustomersByName,
   findCustomersByPhoneLast4,
   linkLineUserToCustomer,
+  getAdminClient,
+  getAnonClient,
 };
