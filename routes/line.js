@@ -31,10 +31,11 @@ function maybeAutoReleaseHandoff(session) {
   if (!session || session.status !== 'handoff_to_staff') return false;
   const startedAt = session.handoffStartedAt || 0;
   if (!startedAt) return false;
-  if (Date.now() - startedAt < HANDOFF_AUTO_RELEASE_MS) return false;
+  const handoffDurationMs = Date.now() - startedAt;
+  if (handoffDurationMs < HANDOFF_AUTO_RELEASE_MS) return false;
 
   const userId = session.userId;
-  console.log(`[Handoff Auto-Release] ${userId} 15分経過 → bot_active に復帰`);
+  console.log(`[Handoff Auto Reset] ${userId} 15分経過でbot_active復帰 (duration=${handoffDurationMs}ms)`);
   clearSlaTimers(userId);
   setStatus(userId, 'counseling');
   patchSession(userId, {
@@ -44,6 +45,20 @@ function maybeAutoReleaseHandoff(session) {
     staffLastResponseAt: null,
     holdingMessageSent: false,
   });
+
+  // 監査ログ
+  logCustomerAccess({
+    action: 'handoff_auto_reset',
+    actor: 'system',
+    customerId: session.customerProfile?.customer?.id || null,
+    details: {
+      lineUserId: userId,
+      handoffDurationMs,
+      handoffStartedAt: new Date(startedAt).toISOString(),
+      staffResponded: !!session.staffLastResponseAt,
+    },
+  }).catch(() => {});
+
   return true;
 }
 const { runLinkingFlow } = require('../services/customerLinking');
