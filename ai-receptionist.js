@@ -180,25 +180,47 @@ AI「カラーですね、承知いたしました。ぜひ教えていただき
 function buildKarteContext(profile) {
   if (!profile) return '';
 
-  const { customer, visits, purchases } = profile;
+  const { customer, visits } = profile;
+  const visitList = Array.isArray(visits) ? visits : [];
+
   let context = '\n\n### このお客様のカルテ情報\n';
   context += `氏名: ${customer.customer_name || customer.name}\n`;
 
-  if (visits.length > 0) {
-    const lastVisit = visits[0];
-    const daysSince = Math.floor(
-      (Date.now() - new Date(lastVisit.visited_at)) / (1000 * 60 * 60 * 24)
-    );
-    context += `前回来店: ${lastVisit.visited_at}（${daysSince}日前）\n`;
-    context += `前回メニュー: ${lastVisit.menu}\n`;
-    context += `前回担当: ${lastVisit.staff_name}\n`;
-    context += `来店回数: ${visits.length}回（直近データ）\n`;
+  // 1. 既存顧客判定（customersテーブルの一次情報を優先）
+  const isExistingCustomer =
+    (typeof customer.visit_count === 'number' && customer.visit_count > 0) ||
+    !!customer.last_visit_at;
 
-    context += '\n直近の施術履歴:\n';
-    visits.forEach((v, i) => {
-      context += `  ${i + 1}. ${v.visited_at} - ${v.menu}（担当:${v.staff_name}）\n`;
-    });
+  if (isExistingCustomer) {
+    context += `来店回数: ${customer.visit_count != null ? customer.visit_count : '不明'}回\n`;
+    if (customer.last_visit_at) {
+      context += `最終来店日: ${customer.last_visit_at}\n`;
+    }
+    if (customer.customer_segment) {
+      context += `顧客セグメント: ${customer.customer_segment}\n`;
+    }
+
+    // 2. 詳細履歴があれば追加（visitsテーブルの補強情報）
+    if (visitList.length > 0) {
+      const lastVisit = visitList[0];
+      if (lastVisit.visited_at) {
+        const daysSince = Math.floor(
+          (Date.now() - new Date(lastVisit.visited_at)) / (1000 * 60 * 60 * 24)
+        );
+        context += `前回来店: ${lastVisit.visited_at}（${daysSince}日前）\n`;
+      }
+      if (lastVisit.menu) context += `前回メニュー: ${lastVisit.menu}\n`;
+      if (lastVisit.staff_name) context += `前回担当: ${lastVisit.staff_name}\n`;
+
+      context += '\n直近の施術履歴:\n';
+      visitList.forEach((v, i) => {
+        context += `  ${i + 1}. ${v.visited_at} - ${v.menu}（担当:${v.staff_name}）\n`;
+      });
+    } else {
+      context += '※詳細履歴はデータ未整備のため参照不可（既存顧客であることは確定）\n';
+    }
   } else {
+    // 3. 本当に新規の可能性
     context += '来店履歴: なし（新規のお客様の可能性）\n';
   }
 
