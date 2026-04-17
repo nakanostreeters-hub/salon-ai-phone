@@ -1,7 +1,7 @@
 // ============================================
 // services/customerLinking.js
-// LINE × カルテ紐づけ MVP
-// 状態機械でお客様から名前/電話下4桁を聞いて顧客を確定する
+// LINE × カルテ紐づけ
+// 名前 + 電話番号下4桁を1回で聞いて照合、両方一致で紐づけ確定
 // ============================================
 
 const {
@@ -15,39 +15,28 @@ const { generateAcknowledgement } = require('./acknowledgement');
 
 const STATES = {
   IDLE: 'idle',
-  AWAITING_NAME: 'awaiting_name',
-  AWAITING_CONFIRM: 'awaiting_confirm',
-  AWAITING_MAYBE_CONFIRM: 'awaiting_maybe_confirm',
-  AWAITING_PHONE_LAST4: 'awaiting_phone_last4',
+  AWAITING_INFO: 'awaiting_info',        // 名前+電話下4桁を待っている
+  AWAITING_REMAINING: 'awaiting_remaining', // 片方だけ来た→残りを待っている
 };
 
 const GREETING_RE = /^(こんにちは|こんばんは|おはよう|はじめまして|初めまして|お世話になっ|お久しぶり|ども|どうも)/;
 
+// 禁止ワード: AI, システム, マイコン, サービス, 導入
+const BANNED_RE = /AI|システム|マイコン|サービス|導入/;
+
+const INTRO = 'こんにちは😊 初めましてサロンコンシェルジュです！';
+
 const MSG = {
-  ASK_NAME_GREETING: 'ご利用ありがとうございます！まずお名前をフルネームで教えていただけますか？😊',
-  ASK_NAME_TEMPLATE: (ack) => `${ack} 確認いたしますので、お名前をフルネームで教えていただけますか？`,
-  CONFIRM:  (name) => `${name}さまでお間違いないでしょうか？😊`,
-  MAYBE:    (name) => `もしかして${name}さまでしょうか？😊`,
-  ASK_LAST4: 'お電話番号の下4桁だけ教えていただけますか？😊',
+  ASK_BOTH_TEMPLATE: (ack) =>
+    `${INTRO}\n${ack}\n念のためお名前と電話番号の下4桁教えていただけますか？`,
+  ASK_BOTH_GREETING:
+    `${INTRO}\nご利用ありがとうございます！\n念のためお名前と電話番号の下4桁教えていただけますか？`,
+  ASK_LAST4: '電話番号の下4桁も教えていただけますか？😊',
+  ASK_NAME: 'お名前も教えていただけますか？😊',
   ESCALATE: '一度担当の者にも確認しますね😊',
 };
 
-/**
- * お客様の最初の発話内容に応じた「名前を教えてください」文を構築する。
- * - 挨拶のみ   → 既定の ASK_NAME_GREETING
- * - それ以外   → AI生成の受け止め（文脈に合った一言）+ 名前要求
- *   例: 「本日かほさん空きありますか?」→「承知しました😊 確認いたしますので、お名前を…」
- *       「カラーしたい」                 →「いいですね😊 確認いたしますので、お名前を…」
- *       「予約を間違えた」               →「ご確認いたしますね 確認いたしますので、お名前を…」
- */
-async function buildAskNameMsg(userMessage) {
-  if (!userMessage || GREETING_RE.test(userMessage.trim())) {
-    return MSG.ASK_NAME_GREETING;
-  }
-  const ack = await generateAcknowledgement(userMessage);
-  if (!ack) return MSG.ASK_NAME_GREETING;
-  return MSG.ASK_NAME_TEMPLATE(ack);
-}
+// ─── ヘルパー ───
 
 const SUFFIX_RE = /(?:です|と申します|だよ|だと思います|だと?)[。.!！]*$/u;
 const HONORIFIC_RE = /(?:さま|さん|様)$/u;
@@ -61,17 +50,17 @@ function normalizeName(s) {
     .trim();
 }
 
-function isYes(text) {
-  return /(はい|そう|間違いない|あって|そうです|そうだ|yes|ok|了解|お願いします)/i.test(text);
-}
-function isNo(text) {
-  return /(いいえ|ちが|違|別人|別|no|ノー|別の)/i.test(text);
-}
 function extractLast4(text) {
   if (!text) return null;
-  // 連続した4桁を抽出（電話番号の下4桁を想定）
   const m = String(text).match(/(\d{4})(?!\d)/);
   return m ? m[1] : null;
+}
+
+/** メッセージから名前部分を抽出（数字4桁を除去→トリム→正規化） */
+function extractNamePart(text) {
+  if (!text) return '';
+  let s = String(text).replace(/\d{4}/g, '').trim();
+  return normalizeName(s);
 }
 
 function pickName(customer) {
@@ -80,22 +69,24 @@ function pickName(customer) {
 
 function getLinkingState(session) {
   if (!session.linking) {
-    session.linking = { state: STATES.IDLE, candidates: [], lastInputName: null, originalIntent: null };
+    session.linking = {
+      state: STATES.IDLE,
+      originalIntent: null,
+      collectedName: null,
+      collectedLast4: null,
+    };
   }
   return session.linking;
 }
 
 function resetLinking(session) {
-  session.linking = { state: STATES.IDLE, candidates: [], lastInputName: null };
+  session.linking = {
+    state: STATES.IDLE,
+    originalIntent: null,
+    collectedName: null,
+    collectedLast4: null,
+  };
 }
-
-/**
- * @typedef {object} LinkingHelpers
- * @property {(text: string) => Promise<void>} sendReply  - replyTokenでLINEに送信
- * @property {(name: string) => void} setDisplayName       - セッションの表示名を更新
- * @property {(profile: object) => void} setCustomerProfile - セッションのcustomerProfileを更新
- * @property {() => void} markEscalated                    - スタッフ引き継ぎフラグを立てる
- */
 
 async function logAttempt(userId, inputName, hits, result) {
   logCustomerAccess({
@@ -107,9 +98,36 @@ async function logAttempt(userId, inputName, hits, result) {
 }
 
 /**
- * 紐づけ完了処理: DB更新 + セッション更新 + ログ
- * 返り値: 紐づけ完了後に通常AIフローへ移行するための情報
+ * 名前 + 電話下4桁の両方で照合し、1件ヒットなら紐づけ完了
  */
+async function tryMatch(session, helpers, userId, name, last4) {
+  // 名前で候補取得
+  const { customers } = await findCustomersByName(name);
+  if (customers.length === 0) {
+    // 名前ヒットなし → 電話だけで試す
+    const byPhone = await findCustomersByPhoneLast4(last4);
+    if (byPhone.length === 1) {
+      return await completeLinking(session, byPhone[0], helpers, userId, name);
+    }
+    await logAttempt(userId, name, 0, 'escalated');
+    return null;
+  }
+
+  // 名前候補の中から電話下4桁で絞る
+  const matched = customers.filter(c => {
+    const p = String(c.phone || '').replace(/\D/g, '');
+    return p.endsWith(last4);
+  });
+
+  if (matched.length === 1) {
+    return await completeLinking(session, matched[0], helpers, userId, name);
+  }
+
+  // 0件 or 複数 → エスカレーション
+  await logAttempt(userId, name, matched.length, 'escalated');
+  return null;
+}
+
 async function completeLinking(session, customer, helpers, userId, inputName) {
   const ok = await linkLineUserToCustomer(customer.id, userId);
   await logAttempt(userId, inputName, 1, ok ? 'success' : 'success_partial');
@@ -124,8 +142,6 @@ async function completeLinking(session, customer, helpers, userId, inputName) {
   const name = pickName(customer);
   if (name) helpers.setDisplayName(name);
 
-  // 紐づけ後に「次回もお気軽に」で会話を終わらせない。
-  // originalIntent を返して呼び出し元のAIフローに引き継ぐ。
   const originalIntent = session.linking?.originalIntent || null;
   resetLinking(session);
 
@@ -133,139 +149,111 @@ async function completeLinking(session, customer, helpers, userId, inputName) {
 }
 
 /**
- * 紐づけフローを1ターン進める。
- * @returns {Promise<{handled: boolean}>}
- *   handled=true なら通常のAIフローはスキップ。false なら通常フローへ。
+ * 初回メッセージを構築（用件への反応付き）
  */
+async function buildInitialMsg(userMessage) {
+  if (!userMessage || GREETING_RE.test(userMessage.trim())) {
+    return MSG.ASK_BOTH_GREETING;
+  }
+  let ack = null;
+  try {
+    ack = await generateAcknowledgement(userMessage);
+  } catch (_) {}
+
+  // 禁止ワードチェック
+  if (ack && BANNED_RE.test(ack)) ack = null;
+
+  const reaction = ack || '承知しました😊';
+  return MSG.ASK_BOTH_TEMPLATE(reaction);
+}
+
+// ============================================
+// メインフロー
+// ============================================
+
 async function runLinkingFlow(session, userId, userMessage, helpers) {
   const linking = getLinkingState(session);
 
-  // 既に紐づけ済み（呼び出し元でチェックすべきだが念のため）
   if (session.customerProfile) return { handled: false };
 
-  // 状態機械
   switch (linking.state) {
     case STATES.IDLE: {
-      // 初回 → お客様の用件に一言反応してから名前を聞く
       linking.originalIntent = userMessage;
-      linking.state = STATES.AWAITING_NAME;
-      const askMsg = await buildAskNameMsg(userMessage);
-      await helpers.sendReply(askMsg);
+      linking.state = STATES.AWAITING_INFO;
+      const msg = await buildInitialMsg(userMessage);
+      await helpers.sendReply(msg);
       return { handled: true };
     }
 
-    case STATES.AWAITING_NAME: {
-      const inputName = normalizeName(userMessage);
-      if (!inputName || inputName.length < 2) {
-        // 名前として認識できない → もう一度
-        await helpers.sendReply(MSG.ASK_NAME_GREETING);
-        return { handled: true };
-      }
-      linking.lastInputName = inputName;
-
-      const { customers, matchKind } = await findCustomersByName(inputName);
-
-      if (customers.length === 1 && matchKind === 'exact') {
-        // 1件確定候補
-        linking.candidates = customers;
-        linking.state = STATES.AWAITING_CONFIRM;
-        await helpers.sendReply(MSG.CONFIRM(pickName(customers[0])));
-        return { handled: true };
-      }
-
-      if (customers.length > 1) {
-        // 複数 → 電話番号で絞り込み
-        linking.candidates = customers;
-        linking.state = STATES.AWAITING_PHONE_LAST4;
-        await helpers.sendReply(MSG.ASK_LAST4);
-        return { handled: true };
-      }
-
-      if (customers.length === 1 && matchKind === 'partial') {
-        // 部分一致1件 → 「もしかして」確認
-        linking.candidates = customers;
-        linking.state = STATES.AWAITING_MAYBE_CONFIRM;
-        await helpers.sendReply(MSG.MAYBE(pickName(customers[0])));
-        return { handled: true };
-      }
-
-      // 0件 or 部分一致複数 → 電話番号で
-      if (customers.length > 1) {
-        linking.candidates = customers;
-      } else {
-        linking.candidates = [];
-      }
-      linking.state = STATES.AWAITING_PHONE_LAST4;
-      await helpers.sendReply(MSG.ASK_LAST4);
-      return { handled: true };
-    }
-
-    case STATES.AWAITING_CONFIRM: {
-      if (isYes(userMessage)) {
-        const cand = linking.candidates[0];
-        if (cand) {
-          const result = await completeLinking(session, cand, helpers, userId, linking.lastInputName);
-          return { handled: false, ...result };
-        }
-      }
-      if (isNo(userMessage)) {
-        // 違う → 電話番号で再特定
-        linking.candidates = [];
-        linking.state = STATES.AWAITING_PHONE_LAST4;
-        await helpers.sendReply(MSG.ASK_LAST4);
-        return { handled: true };
-      }
-      // YES/NO以外 → もう一度確認
-      const cand = linking.candidates[0];
-      if (cand) {
-        await helpers.sendReply(MSG.CONFIRM(pickName(cand)));
-      } else {
-        linking.state = STATES.AWAITING_NAME;
-        await helpers.sendReply(MSG.ASK_NAME_GREETING);
-      }
-      return { handled: true };
-    }
-
-    case STATES.AWAITING_MAYBE_CONFIRM: {
-      if (isYes(userMessage)) {
-        const cand = linking.candidates[0];
-        if (cand) {
-          const result = await completeLinking(session, cand, helpers, userId, linking.lastInputName);
-          return { handled: false, ...result };
-        }
-      }
-      if (isNo(userMessage)) {
-        linking.candidates = [];
-        linking.state = STATES.AWAITING_PHONE_LAST4;
-        await helpers.sendReply(MSG.ASK_LAST4);
-        return { handled: true };
-      }
-      const cand = linking.candidates[0];
-      if (cand) {
-        await helpers.sendReply(MSG.MAYBE(pickName(cand)));
-      } else {
-        linking.state = STATES.AWAITING_NAME;
-        await helpers.sendReply(MSG.ASK_NAME_GREETING);
-      }
-      return { handled: true };
-    }
-
-    case STATES.AWAITING_PHONE_LAST4: {
+    case STATES.AWAITING_INFO: {
+      // メッセージから名前と電話番号下4桁を抽出
       const last4 = extractLast4(userMessage);
-      if (!last4) {
+      const name = extractNamePart(userMessage);
+
+      if (name && name.length >= 2 && last4) {
+        // 両方揃った → 照合
+        linking.collectedName = name;
+        linking.collectedLast4 = last4;
+        const result = await tryMatch(session, helpers, userId, name, last4);
+        if (result) return { handled: false, ...result };
+        // マッチなし → エスカレーション
+        await helpers.sendReply(MSG.ESCALATE);
+        helpers.markEscalated();
+        resetLinking(session);
+        return { handled: true };
+      }
+
+      if (name && name.length >= 2 && !last4) {
+        // 名前のみ → 電話下4桁を追加で聞く
+        linking.collectedName = name;
+        linking.state = STATES.AWAITING_REMAINING;
         await helpers.sendReply(MSG.ASK_LAST4);
         return { handled: true };
       }
-      const restrictTo = (linking.candidates && linking.candidates.length > 0) ? linking.candidates : null;
-      const matched = await findCustomersByPhoneLast4(last4, restrictTo);
 
-      if (matched.length === 1) {
-        const result = await completeLinking(session, matched[0], helpers, userId, linking.lastInputName);
-        return { handled: false, ...result };
+      if (last4 && (!name || name.length < 2)) {
+        // 電話のみ → 名前を追加で聞く
+        linking.collectedLast4 = last4;
+        linking.state = STATES.AWAITING_REMAINING;
+        await helpers.sendReply(MSG.ASK_NAME);
+        return { handled: true };
       }
 
-      // 0件 or 複数 → エスカレーション
-      await logAttempt(userId, linking.lastInputName, matched.length, 'escalated');
+      // どちらも取れない → もう一度
+      await helpers.sendReply('お名前と電話番号の下4桁を教えていただけますか？😊');
+      return { handled: true };
+    }
+
+    case STATES.AWAITING_REMAINING: {
+      // 足りなかった方を補完
+      const last4 = linking.collectedLast4 || extractLast4(userMessage);
+      const name = linking.collectedName || extractNamePart(userMessage);
+
+      if ((!name || name.length < 2) && !last4) {
+        await helpers.sendReply('お名前と電話番号の下4桁を教えていただけますか？😊');
+        return { handled: true };
+      }
+
+      // 片方がまだ無い
+      if (!last4) {
+        if (!linking.collectedName && name && name.length >= 2) {
+          linking.collectedName = name;
+        }
+        await helpers.sendReply(MSG.ASK_LAST4);
+        return { handled: true };
+      }
+      if (!name || name.length < 2) {
+        if (!linking.collectedLast4 && last4) {
+          linking.collectedLast4 = last4;
+        }
+        await helpers.sendReply(MSG.ASK_NAME);
+        return { handled: true };
+      }
+
+      // 両方揃った
+      const result = await tryMatch(session, helpers, userId, name, last4);
+      if (result) return { handled: false, ...result };
+
       await helpers.sendReply(MSG.ESCALATE);
       helpers.markEscalated();
       resetLinking(session);
@@ -273,7 +261,6 @@ async function runLinkingFlow(session, userId, userMessage, helpers) {
     }
   }
 
-  // 想定外の状態 → リセット
   resetLinking(session);
   return { handled: false };
 }
@@ -282,9 +269,7 @@ module.exports = {
   runLinkingFlow,
   resetLinking,
   STATES,
-  // テスト用
   normalizeName,
-  isYes,
-  isNo,
   extractLast4,
+  extractNamePart,
 };
