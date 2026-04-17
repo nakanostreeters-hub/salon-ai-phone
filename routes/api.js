@@ -8,6 +8,8 @@ const { createClient } = require('@supabase/supabase-js');
 const line = require('@line/bot-sdk');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getTenant } = require('../config/tenants');
+const { markStaffActive, setStatus, getSession } = require('../services/lineCounselingSession');
+const { clearSlaTimers } = require('../services/handoffMode');
 
 const router = express.Router();
 
@@ -537,11 +539,19 @@ router.get('/chats', authMiddleware, async (req, res) => {
       }
     }
 
-    const chats = [...chatMap.values()].map(chat => ({
-      ...chat,
-      customerName: customerNames[chat.customerId] || null,
-      status: chat.hasHandoff ? 'handoff' : 'ai_active',
-    }));
+    const chats = [...chatMap.values()].map(chat => {
+      const session = getSession(chat.lineUserId);
+      // 実行中のセッションがあればその conversationState を、無ければ履歴から推測
+      const handoff_status = session
+        ? session.conversationState
+        : (chat.hasHandoff ? 'handoff_pending' : 'ai_active');
+      return {
+        ...chat,
+        customerName: customerNames[chat.customerId] || null,
+        status: chat.hasHandoff ? 'handoff' : 'ai_active',
+        handoff_status,
+      };
+    });
 
     chats.sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
 
@@ -592,7 +602,10 @@ router.get('/chats/:lineUserId', authMiddleware, async (req, res) => {
       }));
     }
 
-    res.json({ messages: data, customer, visits });
+    const session = getSession(req.params.lineUserId);
+    const handoff_status = session ? session.conversationState : null;
+
+    res.json({ messages: data, customer, visits, handoff_status });
   } catch (err) {
     console.error('[API /chats/:id] Error:', err.message);
     res.status(500).json({ error: 'メッセージの取得に失敗しました' });
@@ -620,12 +633,20 @@ router.post('/chats/:lineUserId/reply', authMiddleware, async (req, res) => {
       });
     }
 
+    // セッションを staff_active に遷移（AI排他制御発動）
+    // 以降、同じお客様からのメッセージに AI は応答しない
+    const lineUserId = req.params.lineUserId;
+    setStatus(lineUserId, 'handoff_to_staff');
+    markStaffActive(lineUserId);
+    clearSlaTimers(lineUserId);
+    console.log(`[Handoff State] ${lineUserId} → staff_active (staff replied via mycon)`);
+
     const { error } = await req.supabase
       .from('conversation_logs')
       .insert({
         salon_id: process.env.SALON_ID || null,
         tenant_id: tenant.id,
-        line_user_id: req.params.lineUserId,
+        line_user_id: lineUserId,
         customer_message: '（スタッフ返信）',
         ai_response: message,
         sender_type: 'staff',

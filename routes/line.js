@@ -17,6 +17,9 @@ const {
   setDisplayName,
   patchSession,
   setConversationState,
+  resumeAiMode,
+  markStaffActive,
+  isStaffActive,
 } = require('../services/lineCounselingSession');
 const { classifyHandoffMessage, scheduleSla, clearSlaTimers } = require('../services/handoffMode');
 
@@ -263,13 +266,14 @@ async function handleSlackReplyToLine(channelId, threadTs, text) {
     });
     console.log(`[LINE Push] スタッフ返信送信成功: ${lineUserId}`);
 
-    // 状態遷移: human_active に。SLAタイマーは解除。
+    // 状態遷移: staff_active に（AI排他制御発動）。SLAタイマーは解除。
+    setStatus(lineUserId, 'handoff_to_staff');
     patchSession(lineUserId, {
-      conversationState: 'human_active',
+      conversationState: 'staff_active',
       staffLastResponseAt: Date.now(),
     });
     clearSlaTimers(lineUserId);
-    console.log(`[Handoff State] ${lineUserId} → human_active (staff replied)`);
+    console.log(`[Handoff State] ${lineUserId} → staff_active (staff replied via Slack)`);
 
     return true;
   } catch (err) {
@@ -376,9 +380,75 @@ function forwardToKarutekun(rawBody, headers) {
 }
 
 // ============================================
+// Postback ハンドラ（AI呼び起こしボタン）
+// ============================================
+/**
+ * 引き継ぎメッセージに添付した Postback ボタンを処理する。
+ * data=action=resume_ai ならセッションを ai_resumed に戻し、AI再応答のきっかけメッセージを返す。
+ * @param {object} event LINE event (type=postback)
+ * @param {object|null} tenant テナント（null ならデフォルトLINEクライアントを使用）
+ * @returns {boolean} 処理した場合 true
+ */
+async function handleResumeAiPostback(event, tenant) {
+  if (!event || event.type !== 'postback') return false;
+  const data = event.postback?.data || '';
+  const params = new URLSearchParams(data);
+  if (params.get('action') !== 'resume_ai') return false;
+
+  const userId = event.source?.userId;
+  const replyToken = event.replyToken;
+  if (!userId) return true;
+
+  // スタッフが既に返信を始めている場合は AI に戻さない
+  const currentSession = getOrCreateSession(userId);
+  if (isStaffActive(currentSession)) {
+    console.log(`[Handoff] ${userId} Postback(resume_ai) ignored: already staff_active`);
+    try {
+      const waitText = '担当が対応中です。そのままお待ちください🙏';
+      if (tenant) {
+        await replyToLineWithClient(replyToken, waitText, tenant);
+      } else {
+        await replyToLine(replyToken, waitText);
+      }
+    } catch (err) {
+      console.warn('[Handoff Postback] 抑止メッセージ送信失敗:', err.message);
+    }
+    return true;
+  }
+
+  const session = resumeAiMode(userId);
+  clearSlaTimers(userId);
+  console.log(`[Handoff] ${userId} Postback(resume_ai) → ai_resumed`);
+
+  logCustomerAccess({
+    action: 'handoff_manual_reset',
+    actor: 'customer',
+    customerId: session?.customerProfile?.customer?.id || null,
+    details: { lineUserId: userId, trigger: 'postback_resume_ai' },
+  }).catch(() => {});
+
+  const resumeText = 'お待たせしてすみません😊\nどんなことでしょう？';
+  try {
+    if (tenant) {
+      await replyToLineWithClient(replyToken, resumeText, tenant);
+    } else {
+      await replyToLine(replyToken, resumeText);
+    }
+  } catch (err) {
+    console.warn('[Handoff Postback] 復帰メッセージ送信失敗:', err.message);
+  }
+  return true;
+}
+
+// ============================================
 // イベントハンドラ
 // ============================================
 async function handleEvent(event) {
+  // Postback: AI呼び起こしボタン
+  if (event.type === 'postback') {
+    await handleResumeAiPostback(event, null);
+    return;
+  }
   if (event.type !== 'message' || event.message.type !== 'text') {
     return;
   }
@@ -816,6 +886,12 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
 
   // ─── クイックリプライ検知: AIに戻る / 担当を待つ ───
   if (AI_RETURN_RE.test(userMessage)) {
+    // スタッフが既に返信を始めていたらAI復帰はブロック（排他制御）
+    if (isStaffActive(session)) {
+      console.log(`[Handoff] ${userId} AI復帰要求を抑止: staff_active`);
+      await replyToLineWithClient(replyToken, '担当が対応中です。そのままお待ちください🙏', tenant);
+      return;
+    }
     console.log(`[Handoff] ${userId} AIに相談したい → bot_active に復帰`);
     clearSlaTimers(userId);
     setStatus(userId, 'counseling');
@@ -1012,6 +1088,11 @@ function scheduleHandoffSla(session, tenant) {
 // フリーランスモード処理
 // ============================================
 async function handleFreelanceMode(event, tenant) {
+  // Postback: AI呼び起こしボタン
+  if (event.type === 'postback') {
+    await handleResumeAiPostback(event, tenant);
+    return;
+  }
   if (event.type !== 'message') return;
   if (event.message.type !== 'text' && event.message.type !== 'image') {
     return;
@@ -1464,13 +1545,22 @@ async function pushToLineOwner(ownerLineUserId, message, tenant) {
 // LINE返信（テナント別クライアント使用）
 // ============================================
 // ─── クイックリプライ（引き継ぎ後 お客様→AIに戻す用） ───
+// 「AIに相談する」は Postback にして、お客様の会話ログを「AIに相談したい」で汚さない
 const HANDOFF_QUICK_REPLY = {
   items: [
-    { type: 'action', action: { type: 'message', label: 'AIに相談する', text: 'AIに相談したい' } },
+    {
+      type: 'action',
+      action: {
+        type: 'postback',
+        label: '🤖 AIに相談する',
+        data: 'action=resume_ai',
+        displayText: 'AIに相談する',
+      },
+    },
     { type: 'action', action: { type: 'message', label: '担当を待つ', text: '担当の方を待ちます' } },
   ],
 };
-const AI_RETURN_RE = /AI(に|と)(相談|戻|もど)/i;
+const AI_RETURN_RE = /AI(に|と)(相談|戻|もど)/i; // 後方互換: 旧QuickReply/自然文の両方を受ける
 const WAIT_STAFF_RE = /担当.*(待ち|待つ|待って)/;
 
 async function replyToLineWithClient(replyToken, text, tenant, opts = {}) {

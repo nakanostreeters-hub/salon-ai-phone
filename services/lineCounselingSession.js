@@ -34,7 +34,12 @@ function getOrCreateSession(userId) {
     conversationHistory: [],
     status: 'counseling', // 'counseling' | 'handoff_to_staff'
     // 引き継ぎフロー用の状態管理
-    conversationState: 'bot_active', // bot_active | handoff_pending | human_active | cooldown | closed
+    //   ai_active       : 通常のAI応答モード（= 旧 bot_active。互換のため bot_active も使用可）
+    //   handoff_pending : AIが引き継ぎ判定し、スタッフ返信を待機中
+    //   ai_resumed      : お客様が「AIに相談する」ボタンを押してAI応答を再開した状態
+    //   staff_active    : スタッフが返信を開始し、AIは排他制御で応答停止（= 旧 human_active）
+    //   cooldown / closed : レガシー
+    conversationState: 'bot_active',
     assignedStaffId: null,
     handoffStartedAt: null,
     staffLastResponseAt: null,
@@ -121,6 +126,43 @@ function setConversationState(userId, state) {
 }
 
 /**
+ * スタッフが返信したことを記録してAIを排他制御する
+ * conversationState = 'staff_active' に遷移し、以降 AI は応答しない
+ */
+function markStaffActive(userId) {
+  patchSession(userId, {
+    conversationState: 'staff_active',
+    staffLastResponseAt: Date.now(),
+  });
+}
+
+/**
+ * お客様主導で AI モードを再開する
+ * status: 'counseling', conversationState: 'ai_resumed' に遷移
+ * SLAタイマーや一次受け送信フラグはクリアする
+ */
+function resumeAiMode(userId) {
+  const session = getSession(userId);
+  if (!session) return null;
+  session.status = 'counseling';
+  session.conversationState = 'ai_resumed';
+  session.holdingMessageSent = false;
+  session.updatedAt = Date.now();
+  return session;
+}
+
+/**
+ * AI 応答が抑止されるべき状態か判定（スタッフ応対中）
+ */
+function isStaffActive(session) {
+  if (!session) return false;
+  return (
+    session.conversationState === 'staff_active' ||
+    session.conversationState === 'human_active' // レガシー互換
+  );
+}
+
+/**
  * セッションを削除
  * @param {string} userId
  */
@@ -154,4 +196,7 @@ module.exports = {
   cleanupExpiredSessions,
   patchSession,
   setConversationState,
+  markStaffActive,
+  resumeAiMode,
+  isStaffActive,
 };
