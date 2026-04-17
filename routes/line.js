@@ -266,6 +266,19 @@ async function handleSlackReplyToLine(channelId, threadTs, text) {
     });
     console.log(`[LINE Push] スタッフ返信送信成功: ${lineUserId}`);
 
+    // Slack→LINE スタッフ返信を conversation_logs に保存
+    const session = getOrCreateSession(lineUserId);
+    saveConversationLog({
+      tenantId: session.tenantId || null,
+      customerId: session.customerProfile?.customer?.id || null,
+      lineUserId: lineUserId,
+      customerMessage: '（スタッフ返信）',
+      aiResponse: text,
+      senderType: 'staff',
+      message: text,
+      timestamp: new Date(),
+    }).catch(err => console.warn('[LINE Push] ログ保存エラー:', err.message));
+
     // 状態遷移: conversationState のみ staff_active に（AI排他制御発動）。
     // session.status は既に handoff_to_staff のはずなので触らない（旧挙動に戻す）。
     patchSession(lineUserId, {
@@ -908,6 +921,8 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
         lineUserId: userId,
         customerMessage: userMessage,
         aiResponse: '（スタッフ対応中・AI復帰抑止）',
+        senderType: 'customer',
+        message: userMessage,
         messageType: 'text',
         timestamp: new Date(),
       });
@@ -937,6 +952,8 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
       lineUserId: userId,
       customerMessage: userMessage,
       aiResponse: 'かしこまりました😊 どんなことでしょうか？',
+      senderType: 'customer',
+      message: userMessage,
       timestamp: new Date(),
     });
     await replyToLineWithClient(replyToken, 'かしこまりました😊 どんなことでしょうか？', tenant);
@@ -951,6 +968,8 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
       lineUserId: userId,
       customerMessage: userMessage,
       aiResponse: '（担当を待つ選択）',
+      senderType: 'customer',
+      message: userMessage,
       timestamp: new Date(),
     });
     await postToHandoffSlackThread(session, tenant, `📩 ${customerName}さんが「担当を待つ」を選択しました`);
@@ -961,13 +980,15 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
   const level = await classifyHandoffMessage(userMessage);
   console.log(`[Handoff] ${userId} メッセージ分類: ${level} state=${session.conversationState}`);
 
-  // 必ず会話ログに保存
+  // 必ず会話ログに保存（全分類で保存 — ダッシュボード表示に必須）
   await saveConversationLog({
     tenantId: tenant.id,
     customerId: session.customerProfile?.customer?.id || null,
     lineUserId: userId,
     customerMessage: userMessage,
     aiResponse: `（引き継ぎ済み・${level}）`,
+    senderType: 'customer',
+    message: userMessage,
     messageType: isImage ? 'image' : 'text',
     imageUrl: imageUrl,
     timestamp: new Date(),
