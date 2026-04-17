@@ -814,6 +814,51 @@ async function postToHandoffSlackThread(session, tenant, text) {
 async function handleHandoffModeMessage(session, tenant, userId, userMessage, replyToken, isImage, imageUrl) {
   const customerName = session.displayName || 'お客様';
 
+  // ─── クイックリプライ検知: AIに戻る / 担当を待つ ───
+  if (AI_RETURN_RE.test(userMessage)) {
+    console.log(`[Handoff] ${userId} AIに相談したい → bot_active に復帰`);
+    clearSlaTimers(userId);
+    setStatus(userId, 'counseling');
+    const handoffDurationMs = session.handoffStartedAt ? Date.now() - session.handoffStartedAt : 0;
+    patchSession(userId, {
+      conversationState: 'bot_active',
+      assignedStaffId: null,
+      handoffStartedAt: null,
+      staffLastResponseAt: null,
+      holdingMessageSent: false,
+    });
+    logCustomerAccess({
+      action: 'handoff_manual_reset',
+      actor: 'customer',
+      customerId: session.customerProfile?.customer?.id || null,
+      details: { lineUserId: userId, handoffDurationMs, trigger: 'quick_reply' },
+    }).catch(() => {});
+    await saveConversationLog({
+      tenantId: tenant.id,
+      customerId: session.customerProfile?.customer?.id || null,
+      lineUserId: userId,
+      customerMessage: userMessage,
+      aiResponse: 'かしこまりました😊 どんなことでしょうか？',
+      timestamp: new Date(),
+    });
+    await replyToLineWithClient(replyToken, 'かしこまりました😊 どんなことでしょうか？', tenant);
+    return;
+  }
+
+  if (WAIT_STAFF_RE.test(userMessage)) {
+    console.log(`[Handoff] ${userId} 担当を待つ → handoff継続`);
+    await saveConversationLog({
+      tenantId: tenant.id,
+      customerId: session.customerProfile?.customer?.id || null,
+      lineUserId: userId,
+      customerMessage: userMessage,
+      aiResponse: '（担当を待つ選択）',
+      timestamp: new Date(),
+    });
+    await postToHandoffSlackThread(session, tenant, `📩 ${customerName}さんが「担当を待つ」を選択しました`);
+    return;
+  }
+
   // クラシファイ
   const level = await classifyHandoffMessage(userMessage);
   console.log(`[Handoff] ${userId} メッセージ分類: ${level} state=${session.conversationState}`);
@@ -881,9 +926,9 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
     if (noStaffYet && cooledOff && !session.holdingMessageSent) {
       const holdingText = 'ご連絡ありがとうございます。担当が確認し次第ご連絡します。';
       try {
-        await replyToLineWithClient(replyToken, holdingText, tenant);
+        await replyToLineWithClient(replyToken, holdingText, tenant, { quickReply: HANDOFF_QUICK_REPLY });
         patchSession(userId, { holdingMessageSent: true });
-        console.log(`[Handoff] ${userId} 一次受け送信（10分SLA超え）`);
+        console.log(`[Handoff] ${userId} 一次受け送信（10分SLA超え・QR付き）`);
       } catch (err) {
         console.warn('[Handoff] 一次受け送信失敗:', err.message);
       }
@@ -917,16 +962,15 @@ function scheduleHandoffSla(session, tenant) {
       const s = getOrCreateSession(userId);
       if (s.staffLastResponseAt) return;
       if (s.holdingMessageSent) return;
-      console.log(`[Handoff SLA 10min] ${userId} → お客様へ業務的な一次受け`);
+      console.log(`[Handoff SLA 10min] ${userId} → お客様へ業務的な一次受け（QR付き）`);
       try {
-        const client = getTenantLineClient(tenant);
-        if (client) {
-          await client.pushMessage({
-            to: userId,
-            messages: [{ type: 'text', text: '担当が確認中ですので、少々お待ちください。' }],
-          });
-          patchSession(userId, { holdingMessageSent: true });
-        }
+        await pushWithQuickReply(
+          userId,
+          '担当が確認中ですので、少々お待ちください。',
+          tenant,
+          HANDOFF_QUICK_REPLY
+        );
+        patchSession(userId, { holdingMessageSent: true });
       } catch (err) {
         console.warn('[Handoff SLA 10min] LINE送信失敗:', err.message);
       }
@@ -1128,8 +1172,9 @@ async function handleFreelanceMode(event, tenant) {
       console.log(`[Freelance Delay] 生成に${genElapsed}ms掛かったため遅延スキップ (target=${targetDelayMs}ms)`);
     }
 
-    // LINE返信（テナント別クライアント使用）
-    await replyToLineWithClient(replyToken, cleanResponse, tenant);
+    // LINE返信（引き継ぎ時はクイックリプライ付き）
+    const replyOpts = needsHandoff ? { quickReply: HANDOFF_QUICK_REPLY } : {};
+    await replyToLineWithClient(replyToken, cleanResponse, tenant, replyOpts);
 
     // Supabaseに会話ログ保存
     await saveConversationLog({
@@ -1418,21 +1463,43 @@ async function pushToLineOwner(ownerLineUserId, message, tenant) {
 // ============================================
 // LINE返信（テナント別クライアント使用）
 // ============================================
-async function replyToLineWithClient(replyToken, text, tenant) {
+// ─── クイックリプライ（引き継ぎ後 お客様→AIに戻す用） ───
+const HANDOFF_QUICK_REPLY = {
+  items: [
+    { type: 'action', action: { type: 'message', label: 'AIに相談する', text: 'AIに相談したい' } },
+    { type: 'action', action: { type: 'message', label: '担当を待つ', text: '担当の方を待ちます' } },
+  ],
+};
+const AI_RETURN_RE = /AI(に|と)(相談|戻|もど)/i;
+const WAIT_STAFF_RE = /担当.*(待ち|待つ|待って)/;
+
+async function replyToLineWithClient(replyToken, text, tenant, opts = {}) {
   const client = getTenantLineClient(tenant);
   if (!client) {
     console.warn('[Freelance LINE Reply] クライアント未設定');
     return;
   }
 
+  const msg = { type: 'text', text };
+  if (opts.quickReply) msg.quickReply = opts.quickReply;
+
   try {
-    await client.replyMessage({
-      replyToken,
-      messages: [{ type: 'text', text }],
-    });
+    await client.replyMessage({ replyToken, messages: [msg] });
     console.log(`[Freelance LINE Reply] 返信成功`);
   } catch (err) {
     console.error('[Freelance LINE Reply] 返信エラー:', err.message);
+  }
+}
+
+async function pushWithQuickReply(userId, text, tenant, quickReply) {
+  const client = getTenantLineClient(tenant);
+  if (!client) return;
+  const msg = { type: 'text', text };
+  if (quickReply) msg.quickReply = quickReply;
+  try {
+    await client.pushMessage({ to: userId, messages: [msg] });
+  } catch (err) {
+    console.error('[LINE Push QR] 送信エラー:', err.message);
   }
 }
 
