@@ -576,6 +576,82 @@ button, input, select, textarea {
   white-space: pre-wrap;
 }
 
+/* --- 引き継ぎ議事録カード（折りたたみ） --- */
+.msg-bubble.handoff-card {
+  background: #fbf7ee;
+  border: 1px solid var(--gold-light);
+  color: var(--text);
+  padding: 10px 14px;
+  white-space: normal;
+  cursor: pointer;
+  transition: background var(--transition);
+  user-select: none;
+  min-width: 260px;
+}
+
+.msg-bubble.handoff-card:hover {
+  background: #f7efda;
+}
+
+.handoff-card .handoff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold-dark);
+  margin-bottom: 6px;
+}
+
+.handoff-card .handoff-toggle {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform var(--transition);
+}
+
+.handoff-card .handoff-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.handoff-card .handoff-row {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.handoff-card .handoff-full {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.handoff-card[data-expanded="true"] .handoff-full {
+  max-height: 2000px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--gold-light);
+}
+
+.handoff-card[data-expanded="true"] .handoff-compact {
+  display: none;
+}
+
+.handoff-card .handoff-full pre {
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+  margin: 0;
+}
+
 .msg-sender {
   font-size: 11px;
   color: var(--text-muted);

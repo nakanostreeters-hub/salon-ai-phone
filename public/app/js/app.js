@@ -442,10 +442,21 @@ function renderMessages() {
 
     // --- システムメッセージ（引き継ぎ議事録等） ---
     if (senderType === 'system' || msg.customer_message === '（引き継ぎ議事録）') {
+      const fullText = msg.message || msg.ai_response || '';
+      // 引き継ぎ議事録 / 新しいお問い合わせ（AI引き継ぎ）は折りたたみカードとして表示
+      const isHandoff =
+        msg.is_handoff === true ||
+        msg.customer_message === '（引き継ぎ議事録）' ||
+        /^📋\s*(新しいお問い合わせ|引き継ぎ議事録)/.test(fullText);
+
+      if (isHandoff) {
+        return renderHandoffCard(msg, fullText);
+      }
+
       return `
         <div class="msg-row system">
           <div>
-            <div class="msg-bubble">${escapeHtml(msg.message || msg.ai_response)}</div>
+            <div class="msg-bubble">${escapeHtml(fullText)}</div>
             <div class="msg-time">${formatTime(msg.created_at)}</div>
           </div>
         </div>
@@ -512,6 +523,54 @@ function renderMessages() {
 
   body.scrollTop = body.scrollHeight;
 }
+
+function renderHandoffCard(msg, fullText) {
+  const title = /^📋\s*新しいお問い合わせ/.test(fullText)
+    ? '新しいお問い合わせ（AI引き継ぎ）'
+    : '引き継ぎ議事録';
+
+  const summary = msg.handoff_summary || {};
+
+  // 構造化データ優先、なければ本文から抽出（salon/freelance 両フォーマット対応）
+  const name = summary.customer || pickLine(fullText, /👤\s*(.+?)(?:\s*さま)?\s*$/m) || '—';
+  const staff = summary.staff || pickLine(fullText, /💇\s*指名[:：]\s*(.+?)\s*$/m) || '—';
+  const dateTime = summary.dateTime || pickLine(fullText, /📅\s*希望[:：]\s*(.+?)\s*$/m) || '—';
+
+  return `
+    <div class="msg-row system">
+      <div>
+        <div class="msg-bubble handoff-card" data-expanded="false">
+          <div class="handoff-header">
+            <span class="handoff-title">📋 ${escapeHtml(title)}</span>
+            <span class="handoff-toggle" aria-hidden="true">▶</span>
+          </div>
+          <div class="handoff-compact">
+            <div class="handoff-row">👤 ${escapeHtml(name)}</div>
+            <div class="handoff-row">💇 指名: ${escapeHtml(staff)}</div>
+            <div class="handoff-row">📅 希望: ${escapeHtml(dateTime)}</div>
+          </div>
+          <div class="handoff-full"><pre>${escapeHtml(fullText)}</pre></div>
+        </div>
+        <div class="msg-time">${formatTime(msg.created_at)}</div>
+      </div>
+    </div>
+  `;
+}
+
+function pickLine(text, re) {
+  const m = text.match(re);
+  return m ? m[1].trim() : null;
+}
+
+// 引き継ぎカードの開閉トグル（イベント委譲）
+document.addEventListener('click', (e) => {
+  const card = e.target.closest('.handoff-card');
+  if (!card) return;
+  const expanded = card.dataset.expanded === 'true';
+  card.dataset.expanded = expanded ? 'false' : 'true';
+  const toggle = card.querySelector('.handoff-toggle');
+  if (toggle) toggle.textContent = expanded ? '▶' : '▼';
+});
 
 function renderKarte() {
   const body = document.getElementById('karte-body');
