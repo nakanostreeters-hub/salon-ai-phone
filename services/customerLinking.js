@@ -11,6 +11,7 @@ const {
   getCustomerProfile,
   logCustomerAccess,
 } = require('../supabase-client');
+const { generateAcknowledgement } = require('./acknowledgement');
 
 const STATES = {
   IDLE: 'idle',
@@ -24,18 +25,28 @@ const GREETING_RE = /^(こんにちは|こんばんは|おはよう|はじめま
 
 const MSG = {
   ASK_NAME_GREETING: 'ご利用ありがとうございます！まずお名前をフルネームで教えていただけますか？😊',
-  ASK_NAME_WITH_INTENT: 'いいですね😊 その前に確認させてください！お名前をフルネームで教えていただけますか？',
+  ASK_NAME_TEMPLATE: (ack) => `${ack} 確認いたしますので、お名前をフルネームで教えていただけますか？`,
   CONFIRM:  (name) => `${name}さまでお間違いないでしょうか？😊`,
   MAYBE:    (name) => `もしかして${name}さまでしょうか？😊`,
   ASK_LAST4: 'お電話番号の下4桁だけ教えていただけますか？😊',
   ESCALATE: '一度担当の者にも確認しますね😊',
 };
 
-function buildAskNameMsg(userMessage) {
+/**
+ * お客様の最初の発話内容に応じた「名前を教えてください」文を構築する。
+ * - 挨拶のみ   → 既定の ASK_NAME_GREETING
+ * - それ以外   → AI生成の受け止め（文脈に合った一言）+ 名前要求
+ *   例: 「本日かほさん空きありますか?」→「承知しました😊 確認いたしますので、お名前を…」
+ *       「カラーしたい」                 →「いいですね😊 確認いたしますので、お名前を…」
+ *       「予約を間違えた」               →「ご確認いたしますね 確認いたしますので、お名前を…」
+ */
+async function buildAskNameMsg(userMessage) {
   if (!userMessage || GREETING_RE.test(userMessage.trim())) {
     return MSG.ASK_NAME_GREETING;
   }
-  return MSG.ASK_NAME_WITH_INTENT;
+  const ack = await generateAcknowledgement(userMessage);
+  if (!ack) return MSG.ASK_NAME_GREETING;
+  return MSG.ASK_NAME_TEMPLATE(ack);
 }
 
 const SUFFIX_RE = /(?:です|と申します|だよ|だと思います|だと?)[。.!！]*$/u;
@@ -138,7 +149,8 @@ async function runLinkingFlow(session, userId, userMessage, helpers) {
       // 初回 → お客様の用件に一言反応してから名前を聞く
       linking.originalIntent = userMessage;
       linking.state = STATES.AWAITING_NAME;
-      await helpers.sendReply(buildAskNameMsg(userMessage));
+      const askMsg = await buildAskNameMsg(userMessage);
+      await helpers.sendReply(askMsg);
       return { handled: true };
     }
 
