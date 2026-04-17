@@ -8,7 +8,7 @@ const { createClient } = require('@supabase/supabase-js');
 const line = require('@line/bot-sdk');
 const Anthropic = require('@anthropic-ai/sdk');
 const { getTenant } = require('../config/tenants');
-const { markStaffActive, setStatus, getSession } = require('../services/lineCounselingSession');
+const { markStaffActive, getSession } = require('../services/lineCounselingSession');
 const { clearSlaTimers } = require('../services/handoffMode');
 
 const router = express.Router();
@@ -633,10 +633,10 @@ router.post('/chats/:lineUserId/reply', authMiddleware, async (req, res) => {
       });
     }
 
-    // セッションを staff_active に遷移（AI排他制御発動）
-    // 以降、同じお客様からのメッセージに AI は応答しない
+    // セッションの conversationState だけ staff_active にして AI を黙らせる。
+    // session.status は触らない — お客様メッセージの経路（linking, AI flow）を
+    // 強制的に引き継ぎモードへ切り替えてしまうとメッセージが消える事故が起きるため。
     const lineUserId = req.params.lineUserId;
-    setStatus(lineUserId, 'handoff_to_staff');
     markStaffActive(lineUserId);
     clearSlaTimers(lineUserId);
     console.log(`[Handoff State] ${lineUserId} → staff_active (staff replied via mycon)`);

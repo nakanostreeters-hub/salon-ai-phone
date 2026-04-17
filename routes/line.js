@@ -266,8 +266,8 @@ async function handleSlackReplyToLine(channelId, threadTs, text) {
     });
     console.log(`[LINE Push] スタッフ返信送信成功: ${lineUserId}`);
 
-    // 状態遷移: staff_active に（AI排他制御発動）。SLAタイマーは解除。
-    setStatus(lineUserId, 'handoff_to_staff');
+    // 状態遷移: conversationState のみ staff_active に（AI排他制御発動）。
+    // session.status は既に handoff_to_staff のはずなので触らない（旧挙動に戻す）。
     patchSession(lineUserId, {
       conversationState: 'staff_active',
       staffLastResponseAt: Date.now(),
@@ -403,6 +403,18 @@ async function handleResumeAiPostback(event, tenant) {
   const currentSession = getOrCreateSession(userId);
   if (isStaffActive(currentSession)) {
     console.log(`[Handoff] ${userId} Postback(resume_ai) ignored: already staff_active`);
+    // 抑止した postback も監査ログに残す（可視化漏れ防止）
+    if (tenant) {
+      await saveConversationLog({
+        tenantId: tenant.id,
+        customerId: currentSession.customerProfile?.customer?.id || null,
+        lineUserId: userId,
+        customerMessage: '（AIに相談するボタン押下・抑止）',
+        aiResponse: '担当が対応中のため抑止',
+        messageType: 'text',
+        timestamp: new Date(),
+      });
+    }
     try {
       const waitText = '担当が対応中です。そのままお待ちください🙏';
       if (tenant) {
@@ -887,8 +899,18 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
   // ─── クイックリプライ検知: AIに戻る / 担当を待つ ───
   if (AI_RETURN_RE.test(userMessage)) {
     // スタッフが既に返信を始めていたらAI復帰はブロック（排他制御）
+    // 抑止したケースでもお客様の発話はログに残す（表示漏れ防止）
     if (isStaffActive(session)) {
       console.log(`[Handoff] ${userId} AI復帰要求を抑止: staff_active`);
+      await saveConversationLog({
+        tenantId: tenant.id,
+        customerId: session.customerProfile?.customer?.id || null,
+        lineUserId: userId,
+        customerMessage: userMessage,
+        aiResponse: '（スタッフ対応中・AI復帰抑止）',
+        messageType: 'text',
+        timestamp: new Date(),
+      });
       await replyToLineWithClient(replyToken, '担当が対応中です。そのままお待ちください🙏', tenant);
       return;
     }
@@ -1168,6 +1190,24 @@ async function handleFreelanceMode(event, tenant) {
     }
   }
 
+  // ─── staff_active 排他制御（mycon スタッフが先制介入したケース） ───
+  // status は counseling のまま（linking 中などの可能性）だが staff が mycon で返信済み。
+  // AI も linking も走らせず、お客様の発話だけは必ず DB に残す。
+  if (isStaffActive(session)) {
+    console.log(`[Freelance] ${userId} staff_active: AI/linking 停止・メッセージログのみ保存`);
+    await saveConversationLog({
+      tenantId: tenant.id,
+      customerId: session.customerProfile?.customer?.id || null,
+      lineUserId: userId,
+      customerMessage: userMessage,
+      aiResponse: '（スタッフ対応中・AI停止）',
+      messageType: isImage ? 'image' : 'text',
+      imageUrl,
+      timestamp: new Date(),
+    });
+    return;
+  }
+
   // ─── 顧客紐づけフロー（未紐づけのお客様のみ） ───
   // 画像メッセージ中は紐づけフローに乗せない（テキストの返答が必要なため）
   if (!session.customerProfile && !isImage) {
@@ -1222,6 +1262,22 @@ async function handleFreelanceMode(event, tenant) {
 
   // 会話履歴にユーザーメッセージ追加
   addMessage(userId, 'user', userMessage);
+
+  // 二重ガード: ここまで来た時点で staff_active なら AI を喋らせない
+  if (isStaffActive(session)) {
+    console.log(`[Freelance] ${userId} staff_active 二重ガード発動: AI発話停止`);
+    await saveConversationLog({
+      tenantId: tenant.id,
+      customerId: session.customerProfile?.customer?.id || null,
+      lineUserId: userId,
+      customerMessage: userMessage,
+      aiResponse: '（スタッフ対応中・AI停止）',
+      messageType: isImage ? 'image' : 'text',
+      imageUrl,
+      timestamp: new Date(),
+    });
+    return;
+  }
 
   // AIカウンセリング応答生成
   try {
