@@ -1268,62 +1268,93 @@ function needsImmediateHandoffCheck(text) {
 // ============================================
 // フリーランス引き継ぎデータ構築
 // ============================================
+// スタッフ名抽出用パターン（config/staff.jsと同期）
+const STAFF_NAMES_FOR_HANDOFF = ['梶原', '梶原広樹', '森', '森美奈子', '大田', '大田夏帆', '渡邊', '渡邊達也', 'JUN', 'じゃっきー'];
+const STAFF_MENTION_RE = new RegExp(
+  `(${STAFF_NAMES_FOR_HANDOFF.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(さん|先生|くん)?`,
+  'i'
+);
+const MENU_KEYWORDS = ['カット', 'カラー', 'パーマ', '縮毛矯正', 'トリートメント', 'ヘッドスパ', 'ストレート', 'ブリーチ', '白髪染め', 'リタッチ', 'ハイライト'];
+const HAIR_RE = /(?:髪|毛先|根元|癖|くせ|ダメージ|パサ|ぱさ|量が多|量が少|薄|ボリューム|うねり|広がり|ゴワ|ごわ|絡まり|枝毛)/;
+
 function buildFreelanceHandoffData(session) {
   const history = session.conversationHistory;
-  const displayName = session.displayName || 'お客様';
+
+  // 顧客名: 紐づけ済みカルテ名 → LINE表示名 → デフォルト
+  const customerName =
+    session.customerProfile?.customer?.customer_name ||
+    session.displayName ||
+    'お客様';
+
   const customerMessages = history.filter(m => m.role === 'user').map(m => m.content);
   const allText = history.map(m => m.content).join(' ');
+  const customerText = customerMessages.join(' ');
 
-  // メニュー抽出
-  let menuItems = [];
-  if (allText.includes('カット')) menuItems.push('カット');
-  if (allText.includes('カラー')) menuItems.push('カラー');
-  if (allText.includes('パーマ')) menuItems.push('パーマ');
-  if (allText.includes('縮毛矯正')) menuItems.push('縮毛矯正');
-  if (allText.includes('トリートメント')) menuItems.push('トリートメント');
-  if (allText.includes('ヘッドスパ')) menuItems.push('ヘッドスパ');
+  // メニュー抽出（施術名キーワードのみ）
+  const menuItems = MENU_KEYWORDS.filter(k => allText.includes(k));
   const menuStr = menuItems.length > 0 ? menuItems.join('・') : '未定';
 
   // 希望日時抽出
-  const customerText = customerMessages.join(' ');
   let dateTime = '未定';
   const dateMatch = customerText.match(/(明日|明後日|来週|今週|今日|\d{1,2}月\d{1,2}日|\d{1,2}\/\d{1,2})/);
   if (dateMatch) dateTime = dateMatch[0];
   const timeMatch = customerText.match(/(\d{1,2}時(半)?|\d{1,2}:\d{2}|午前|午後)/);
   if (timeMatch) dateTime += ' ' + timeMatch[0];
 
-  // 髪の状態
-  let hairCondition = '';
-  if (customerMessages.length >= 2) {
-    hairCondition = customerMessages.slice(1).join('、');
+  // 指名スタッフ抽出（「○○さん」「○○さんで」「○○さんお願い」等）
+  const staffMatch = customerText.match(STAFF_MENTION_RE);
+  const requestedStaff = staffMatch
+    ? STAFF_NAMES_FOR_HANDOFF.find(n => staffMatch[0].startsWith(n)) || staffMatch[1]
+    : '指名なし';
+
+  // 髪の状態（お客様が髪について明確に述べた文のみ）
+  const hairSentences = customerMessages
+    .filter(m => HAIR_RE.test(m))
+    .map(m => m.slice(0, 60));
+  const hairCondition = hairSentences.length > 0 ? hairSentences.join('、') : '—';
+
+  // カルテ情報（あれば追加）
+  let karteNote = '';
+  if (session.customerProfile) {
+    const visits = session.customerProfile.visits || [];
+    if (visits.length > 0) {
+      const last = visits[0];
+      const daysAgo = last.visited_at
+        ? Math.floor((Date.now() - new Date(last.visited_at)) / (1000 * 60 * 60 * 24))
+        : null;
+      karteNote = daysAgo != null
+        ? `前回来店: ${daysAgo}日前（${last.menu || '不明'}）`
+        : '';
+    }
   }
 
   // 会話ログ
   let conversationLog = '';
   for (const msg of history) {
     if (msg.role === 'user') {
-      conversationLog += `👤 ${displayName}さま\n${msg.content}\n\n`;
+      conversationLog += `👤 ${customerName}さま\n${msg.content}\n\n`;
     } else {
       conversationLog += `🤵 コンシェルジュ\n${msg.content}\n\n`;
     }
   }
 
   const summary = {
-    customer: displayName,
+    customer: customerName,
     menu: menuStr,
-    dateTime: dateTime,
-    hairCondition: hairCondition || '未確認',
-    notes: '',
+    dateTime,
+    staff: requestedStaff,
+    hairCondition,
+    karteNote,
   };
 
   const message = `📋 新しいお問い合わせ（AI引き継ぎ）
 ━━━━━━━━━━
-👤 ${displayName}
+👤 ${customerName}
 ✂️ メニュー: ${summary.menu}
 📅 希望: ${summary.dateTime}
+💇 指名: ${summary.staff}
 💬 髪の状態: ${summary.hairCondition}
-📝 その他: ${summary.notes || 'なし'}
-━━━━━━━━━━
+${karteNote ? `📝 カルテ: ${karteNote}\n` : ''}━━━━━━━━━━
 
 💬 会話ログ:
 ${conversationLog}`;
