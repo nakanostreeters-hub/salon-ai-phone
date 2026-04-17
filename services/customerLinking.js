@@ -20,14 +20,23 @@ const STATES = {
   AWAITING_PHONE_LAST4: 'awaiting_phone_last4',
 };
 
+const GREETING_RE = /^(こんにちは|こんばんは|おはよう|はじめまして|初めまして|お世話になっ|お久しぶり|ども|どうも)/;
+
 const MSG = {
-  ASK_NAME: 'ご利用ありがとうございます！まずお名前をフルネームで教えていただけますか？😊',
+  ASK_NAME_GREETING: 'ご利用ありがとうございます！まずお名前をフルネームで教えていただけますか？😊',
+  ASK_NAME_WITH_INTENT: 'いいですね😊 その前に確認させてください！お名前をフルネームで教えていただけますか？',
   CONFIRM:  (name) => `${name}さまでお間違いないでしょうか？😊`,
   MAYBE:    (name) => `もしかして${name}さまでしょうか？😊`,
   ASK_LAST4: 'お電話番号の下4桁だけ教えていただけますか？😊',
-  LINKED:   (name) => `${name}さま、ありがとうございます！次回もお気軽にご連絡くださいね😊`,
   ESCALATE: '一度担当の者にも確認しますね😊',
 };
+
+function buildAskNameMsg(userMessage) {
+  if (!userMessage || GREETING_RE.test(userMessage.trim())) {
+    return MSG.ASK_NAME_GREETING;
+  }
+  return MSG.ASK_NAME_WITH_INTENT;
+}
 
 const SUFFIX_RE = /(?:です|と申します|だよ|だと思います|だと?)[。.!！]*$/u;
 const HONORIFIC_RE = /(?:さま|さん|様)$/u;
@@ -60,7 +69,7 @@ function pickName(customer) {
 
 function getLinkingState(session) {
   if (!session.linking) {
-    session.linking = { state: STATES.IDLE, candidates: [], lastInputName: null };
+    session.linking = { state: STATES.IDLE, candidates: [], lastInputName: null, originalIntent: null };
   }
   return session.linking;
 }
@@ -88,13 +97,13 @@ async function logAttempt(userId, inputName, hits, result) {
 
 /**
  * 紐づけ完了処理: DB更新 + セッション更新 + ログ
+ * 返り値: 紐づけ完了後に通常AIフローへ移行するための情報
  */
 async function completeLinking(session, customer, helpers, userId, inputName) {
   const ok = await linkLineUserToCustomer(customer.id, userId);
   await logAttempt(userId, inputName, 1, ok ? 'success' : 'success_partial');
 
   if (ok) {
-    // 紐づけ後にプロフィールを再取得
     try {
       const profile = await getCustomerProfile(userId, 'line_id');
       if (profile) helpers.setCustomerProfile(profile);
@@ -103,9 +112,13 @@ async function completeLinking(session, customer, helpers, userId, inputName) {
 
   const name = pickName(customer);
   if (name) helpers.setDisplayName(name);
-  await helpers.sendReply(MSG.LINKED(name || 'お客様'));
 
+  // 紐づけ後に「次回もお気軽に」で会話を終わらせない。
+  // originalIntent を返して呼び出し元のAIフローに引き継ぐ。
+  const originalIntent = session.linking?.originalIntent || null;
   resetLinking(session);
+
+  return { linked: true, originalIntent };
 }
 
 /**
@@ -122,9 +135,10 @@ async function runLinkingFlow(session, userId, userMessage, helpers) {
   // 状態機械
   switch (linking.state) {
     case STATES.IDLE: {
-      // 初回 → 名前を聞く
+      // 初回 → お客様の用件に一言反応してから名前を聞く
+      linking.originalIntent = userMessage;
       linking.state = STATES.AWAITING_NAME;
-      await helpers.sendReply(MSG.ASK_NAME);
+      await helpers.sendReply(buildAskNameMsg(userMessage));
       return { handled: true };
     }
 
@@ -132,7 +146,7 @@ async function runLinkingFlow(session, userId, userMessage, helpers) {
       const inputName = normalizeName(userMessage);
       if (!inputName || inputName.length < 2) {
         // 名前として認識できない → もう一度
-        await helpers.sendReply(MSG.ASK_NAME);
+        await helpers.sendReply(MSG.ASK_NAME_GREETING);
         return { handled: true };
       }
       linking.lastInputName = inputName;
@@ -178,8 +192,8 @@ async function runLinkingFlow(session, userId, userMessage, helpers) {
       if (isYes(userMessage)) {
         const cand = linking.candidates[0];
         if (cand) {
-          await completeLinking(session, cand, helpers, userId, linking.lastInputName);
-          return { handled: true };
+          const result = await completeLinking(session, cand, helpers, userId, linking.lastInputName);
+          return { handled: false, ...result };
         }
       }
       if (isNo(userMessage)) {
@@ -195,7 +209,7 @@ async function runLinkingFlow(session, userId, userMessage, helpers) {
         await helpers.sendReply(MSG.CONFIRM(pickName(cand)));
       } else {
         linking.state = STATES.AWAITING_NAME;
-        await helpers.sendReply(MSG.ASK_NAME);
+        await helpers.sendReply(MSG.ASK_NAME_GREETING);
       }
       return { handled: true };
     }
@@ -204,8 +218,8 @@ async function runLinkingFlow(session, userId, userMessage, helpers) {
       if (isYes(userMessage)) {
         const cand = linking.candidates[0];
         if (cand) {
-          await completeLinking(session, cand, helpers, userId, linking.lastInputName);
-          return { handled: true };
+          const result = await completeLinking(session, cand, helpers, userId, linking.lastInputName);
+          return { handled: false, ...result };
         }
       }
       if (isNo(userMessage)) {
@@ -219,7 +233,7 @@ async function runLinkingFlow(session, userId, userMessage, helpers) {
         await helpers.sendReply(MSG.MAYBE(pickName(cand)));
       } else {
         linking.state = STATES.AWAITING_NAME;
-        await helpers.sendReply(MSG.ASK_NAME);
+        await helpers.sendReply(MSG.ASK_NAME_GREETING);
       }
       return { handled: true };
     }
@@ -234,8 +248,8 @@ async function runLinkingFlow(session, userId, userMessage, helpers) {
       const matched = await findCustomersByPhoneLast4(last4, restrictTo);
 
       if (matched.length === 1) {
-        await completeLinking(session, matched[0], helpers, userId, linking.lastInputName);
-        return { handled: true };
+        const result = await completeLinking(session, matched[0], helpers, userId, linking.lastInputName);
+        return { handled: false, ...result };
       }
 
       // 0件 or 複数 → エスカレーション

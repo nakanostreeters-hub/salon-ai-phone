@@ -1087,6 +1087,12 @@ async function handleFreelanceMode(event, tenant) {
       return;
     }
     // handled=false なら紐づけフロー外 → 通常AIへフォールスルー
+
+    // 紐づけ完了直後：originalIntent があれば元の用件でAI応答する
+    if (linkResult.linked && linkResult.originalIntent) {
+      userMessage = linkResult.originalIntent;
+      console.log(`[Linking] ${userId} 紐づけ完了 → originalIntent="${userMessage}" でAI応答`);
+    }
   }
 
   // 会話履歴にユーザーメッセージ追加
@@ -1225,7 +1231,8 @@ async function generateFreelanceResponse(session, tenant) {
     session.customerProfile?.customer?.name ||
     session.displayName ||
     null;
-  let systemPrompt = buildFreelanceCounselingPrompt(tenant, karteContext, { isFirstContact, customerName });
+  const originalIntent = session.linking?.originalIntent || null;
+  let systemPrompt = buildFreelanceCounselingPrompt(tenant, karteContext, { isFirstContact, customerName, originalIntent });
 
   // 2往復未満は引き継ぎ禁止
   const userTurnCount = session.conversationHistory.filter(m => m.role === 'user').length;
