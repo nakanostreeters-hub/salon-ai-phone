@@ -1309,9 +1309,13 @@ async function handleFreelanceMode(event, tenant) {
     const aiResponse = await generateFreelanceResponse(session, tenant);
     const genElapsed = Date.now() - genStart;
 
-    // [HANDOFF] タグの処理
+    // [HANDOFF] / [CHOICE_HANDOFF] タグの処理
     const needsHandoff = aiResponse.includes('[HANDOFF]');
-    const cleanResponse = aiResponse.replace(/\[HANDOFF\]/g, '').trim();
+    const needsChoice = !needsHandoff && aiResponse.includes('[CHOICE_HANDOFF]');
+    const cleanResponse = aiResponse
+      .replace(/\[HANDOFF\]/g, '')
+      .replace(/\[CHOICE_HANDOFF\]/g, '')
+      .trim();
 
     // 会話履歴にAI応答を追加
     addMessage(userId, 'assistant', cleanResponse);
@@ -1331,7 +1335,9 @@ async function handleFreelanceMode(event, tenant) {
     }
 
     // LINE返信（引き継ぎ時はクイックリプライ付き）
-    const replyOpts = needsHandoff ? { quickReply: HANDOFF_QUICK_REPLY } : {};
+    let replyOpts = {};
+    if (needsHandoff) replyOpts = { quickReply: HANDOFF_QUICK_REPLY };
+    else if (needsChoice) replyOpts = { quickReply: CHOICE_QUICK_REPLY };
     await replyToLineWithClient(replyToken, cleanResponse, tenant, replyOpts);
 
     // Supabaseに会話ログ保存
@@ -1635,6 +1641,15 @@ const HANDOFF_QUICK_REPLY = {
       },
     },
     { type: 'action', action: { type: 'message', label: '担当を待つ', text: '担当の方を待ちます' } },
+  ],
+};
+
+// ─── 引き継ぎ前の選択用クイックリプライ（[CHOICE_HANDOFF]タグ検出時） ───
+// お客様が悩み・希望スタイルを答えた直後に出し、続けて相談するか担当に繋ぐかを選んでもらう。
+const CHOICE_QUICK_REPLY = {
+  items: [
+    { type: 'action', action: { type: 'message', label: 'さらに質問する', text: '他にも相談したいです' } },
+    { type: 'action', action: { type: 'message', label: '担当に繋ぐ', text: '担当の方にお願いします' } },
   ],
 };
 const AI_RETURN_RE = /AI(に|と)(相談|戻|もど)/i; // 後方互換: 旧QuickReply/自然文の両方を受ける
