@@ -186,6 +186,16 @@ async function saveConversationLog(logData) {
   if (logData.senderType) row.sender_type = logData.senderType;
   if (logData.message) row.message = logData.message;
 
+  // ── 後方互換: 旧カラム（customer_message / ai_response）にも値を入れる ──
+  // ダッシュボードや旧クエリが customer_message / ai_response を前提にしている場合の保険。
+  // NOT NULL 制約解除後も、旧カラムから参照しているビューが壊れないようにする。
+  if (logData.senderType === 'customer' && logData.message && row.customer_message == null) {
+    row.customer_message = logData.message;
+  }
+  if (logData.senderType === 'ai' && logData.message && row.ai_response == null) {
+    row.ai_response = logData.message;
+  }
+
   // 画像メッセージ対応
   if (logData.messageType) row.message_type = logData.messageType;
   if (logData.imageUrl) row.image_url = logData.imageUrl;
