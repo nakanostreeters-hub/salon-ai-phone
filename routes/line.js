@@ -69,7 +69,7 @@ const { buildLineCounselingPrompt } = require('../prompts/lineCounseling');
 const { buildFreelanceCounselingPrompt } = require('../prompts/freelanceCounseling');
 const { findStaffByName } = require('../config/staff');
 const { getTenant } = require('../config/tenants');
-const { getCustomerProfile, saveConversationLog, uploadImageToStorage, hasPriorConversation, logCustomerAccess } = require('../supabase-client');
+const { getCustomerProfile, saveConversationLog, saveCustomerAndAiMessages, uploadImageToStorage, hasPriorConversation, logCustomerAccess } = require('../supabase-client');
 const { buildKarteContext } = require('../ai-receptionist');
 const { CHANNEL_ALL, CHANNEL_NEW, getChannelForStylist } = require('../config/slackChannels');
 
@@ -422,8 +422,8 @@ async function handleResumeAiPostback(event, tenant) {
         tenantId: tenant.id,
         customerId: currentSession.customerProfile?.customer?.id || null,
         lineUserId: userId,
-        customerMessage: '（AIに相談するボタン押下・抑止）',
-        aiResponse: '担当が対応中のため抑止',
+        senderType: 'system',
+        message: '（AIに相談するボタン押下・抑止: 担当が対応中のため）',
         messageType: 'text',
         timestamp: new Date(),
       });
@@ -946,17 +946,16 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
       customerId: session.customerProfile?.customer?.id || null,
       details: { lineUserId: userId, handoffDurationMs, trigger: 'quick_reply' },
     }).catch(() => {});
-    await saveConversationLog({
+    const resumeReply = 'かしこまりました😊 どんなことでしょうか？';
+    await saveCustomerAndAiMessages({
       tenantId: tenant.id,
       customerId: session.customerProfile?.customer?.id || null,
       lineUserId: userId,
-      customerMessage: userMessage,
-      aiResponse: 'かしこまりました😊 どんなことでしょうか？',
-      senderType: 'customer',
-      message: userMessage,
+      userMessage,
+      aiResponse: resumeReply,
       timestamp: new Date(),
     });
-    await replyToLineWithClient(replyToken, 'かしこまりました😊 どんなことでしょうか？', tenant);
+    await replyToLineWithClient(replyToken, resumeReply, tenant);
     return;
   }
 
@@ -1220,8 +1219,8 @@ async function handleFreelanceMode(event, tenant) {
       tenantId: tenant.id,
       customerId: session.customerProfile?.customer?.id || null,
       lineUserId: userId,
-      customerMessage: userMessage,
-      aiResponse: '（スタッフ対応中・AI停止）',
+      senderType: 'customer',
+      message: userMessage,
       messageType: isImage ? 'image' : 'text',
       imageUrl,
       timestamp: new Date(),
@@ -1236,12 +1235,12 @@ async function handleFreelanceMode(event, tenant) {
       sendReply: async (text) => {
         try {
           await replyToLineWithClient(replyToken, text, tenant);
-          // 会話ログに保存
-          await saveConversationLog({
+          // 会話ログに保存（紐付けフロー中のボット返信も sender_type='ai' として残す）
+          await saveCustomerAndAiMessages({
             tenantId: tenant.id,
             customerId: null,
             lineUserId: userId,
-            customerMessage: userMessage,
+            userMessage,
             aiResponse: text,
             messageType: 'text',
             timestamp: new Date(),
@@ -1291,8 +1290,8 @@ async function handleFreelanceMode(event, tenant) {
       tenantId: tenant.id,
       customerId: session.customerProfile?.customer?.id || null,
       lineUserId: userId,
-      customerMessage: userMessage,
-      aiResponse: '（スタッフ対応中・AI停止）',
+      senderType: 'customer',
+      message: userMessage,
       messageType: isImage ? 'image' : 'text',
       imageUrl,
       timestamp: new Date(),
@@ -1340,16 +1339,16 @@ async function handleFreelanceMode(event, tenant) {
     else if (needsChoice) replyOpts = { quickReply: CHOICE_QUICK_REPLY };
     await replyToLineWithClient(replyToken, cleanResponse, tenant, replyOpts);
 
-    // Supabaseに会話ログ保存
-    await saveConversationLog({
+    // Supabaseに会話ログ保存（お客様発話 + AI応答をそれぞれ sender_type 付き1行ずつ）
+    await saveCustomerAndAiMessages({
       tenantId: tenant.id,
       customerId: session.customerProfile?.customer?.id || null,
       lineUserId: userId,
-      customerMessage: userMessage,
+      userMessage,
       aiResponse: cleanResponse,
       isHandoff: needsHandoff,
       messageType: isImage ? 'image' : 'text',
-      imageUrl: imageUrl,
+      imageUrl,
       timestamp: new Date(),
     });
 
@@ -1389,13 +1388,14 @@ async function handleFreelanceMode(event, tenant) {
 
       const handoffData = buildFreelanceHandoffData(session);
 
-      // handoff_summaryもログに保存
+      // handoff_summaryもログに保存（sender_type='system' で分類）
       await saveConversationLog({
         tenantId: tenant.id,
         customerId: session.customerProfile?.customer?.id || null,
         lineUserId: userId,
-        customerMessage: '（引き継ぎ議事録）',
-        aiResponse: handoffData.message,
+        senderType: 'system',
+        message: handoffData.message,
+        customerMessage: '（引き継ぎ議事録）', // 旧カラム互換（フロント判定用）
         isHandoff: true,
         handoffSummary: handoffData.summary,
         timestamp: new Date(),

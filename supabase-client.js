@@ -201,6 +201,60 @@ async function saveConversationLog(logData) {
   return data;
 }
 
+/**
+ * お客様メッセージとAI応答をそれぞれ独立した sender_type 付きの行として保存する。
+ * - お客様行: sender_type='customer', message=userMessage
+ * - AI行:     sender_type='ai',       message=aiResponse
+ *
+ * 旧コードは customer_message と ai_response を1行にまとめて保存していたが、
+ * 新スキーマ（sender_type + message）に揃えるためペアで2行保存する。
+ * AI行は +1ms 遅延させて表示順（created_at ASC）で必ず customer の後に出るようにする。
+ */
+async function saveCustomerAndAiMessages({
+  tenantId,
+  customerId = null,
+  lineUserId,
+  userMessage,
+  aiResponse,
+  isHandoff = false,
+  handoffSummary = null,
+  messageType = 'text',
+  imageUrl = null,
+  timestamp,
+}) {
+  const t = timestamp instanceof Date
+    ? timestamp
+    : new Date(timestamp || Date.now());
+
+  // お客様行
+  if (userMessage) {
+    await saveConversationLog({
+      tenantId,
+      customerId,
+      lineUserId,
+      senderType: 'customer',
+      message: userMessage,
+      messageType,
+      imageUrl,
+      timestamp: t,
+    });
+  }
+
+  // AI/Bot応答行
+  if (aiResponse) {
+    await saveConversationLog({
+      tenantId,
+      customerId,
+      lineUserId,
+      senderType: 'ai',
+      message: aiResponse,
+      isHandoff,
+      handoffSummary,
+      timestamp: new Date(t.getTime() + 1),
+    });
+  }
+}
+
 // ============================================
 // 画像アップロード（mycon-images バケット）
 // ============================================
@@ -397,6 +451,7 @@ module.exports = {
   getRecentPurchases,
   getCustomerProfile,
   saveConversationLog,
+  saveCustomerAndAiMessages,
   uploadImageToStorage,
   hasPriorConversation,
   logCustomerAccess,

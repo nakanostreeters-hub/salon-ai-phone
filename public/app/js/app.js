@@ -494,6 +494,20 @@ function renderMessages() {
       return html;
     }
 
+    // --- AI応答 ---
+    if (senderType === 'ai') {
+      html += `
+        <div class="msg-row ai">
+          <div>
+            <div class="msg-sender">AI</div>
+            <div class="msg-bubble">${escapeHtml(msg.message || msg.ai_response)}</div>
+            <div class="msg-time">${formatTime(msg.created_at)}</div>
+          </div>
+        </div>
+      `;
+      return html;
+    }
+
     // --- 既存データ互換（sender_type なし）: お客様 + AI のペア ---
     if (msg.customer_message && msg.customer_message !== '（スタッフ返信）') {
       html += `
