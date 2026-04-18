@@ -285,6 +285,8 @@ async function handleSlackReplyToLine(channelId, threadTs, text) {
       conversationState: 'staff_active',
       staffLastResponseAt: Date.now(),
       hasChosenWaitForStaff: false,
+      level0AckSent: false,
+      level1AckSent: false,
     });
     clearSlaTimers(lineUserId);
     console.log(`[Handoff State] ${lineUserId} → staff_active (staff replied via Slack)`);
@@ -1015,6 +1017,15 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
 
   if (level === 'level0') {
     // 無反応: ログのみ。Slack通知も不要
+    // ただし、お客様がクイックリプライを見失わないよう1会話に1回だけ確認メッセージ+QRを送る
+    if (!session.level0AckSent) {
+      try {
+        await replyToLineWithClient(replyToken, '確認いたしました😊', tenant, { quickReply: pickHandoffQuickReply(session) });
+        patchSession(userId, { level0AckSent: true });
+      } catch (err) {
+        console.warn('[Handoff level0] 確認メッセージ送信失敗:', err.message);
+      }
+    }
     return;
   }
 
@@ -1025,6 +1036,15 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
       tenant,
       `📩 ${customerName}（引き継ぎ後）\n>${userMessage}`
     );
+    // お客様がクイックリプライを見失わないよう1会話に1回だけ確認メッセージ+QRを送る
+    if (!session.level1AckSent) {
+      try {
+        await replyToLineWithClient(replyToken, '承知しました、担当に伝えておきますね😊', tenant, { quickReply: pickHandoffQuickReply(session) });
+        patchSession(userId, { level1AckSent: true });
+      } catch (err) {
+        console.warn('[Handoff level1] 確認メッセージ送信失敗:', err.message);
+      }
+    }
     // クールダウン中だった場合、メッセージが来たので human_active に戻す（スタッフが返すまで保留）
     return;
   }
