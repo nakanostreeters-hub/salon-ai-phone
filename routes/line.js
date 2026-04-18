@@ -284,6 +284,7 @@ async function handleSlackReplyToLine(channelId, threadTs, text) {
     patchSession(lineUserId, {
       conversationState: 'staff_active',
       staffLastResponseAt: Date.now(),
+      hasChosenWaitForStaff: false,
     });
     clearSlaTimers(lineUserId);
     console.log(`[Handoff State] ${lineUserId} → staff_active (staff replied via Slack)`);
@@ -971,6 +972,7 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
       message: userMessage,
       timestamp: new Date(),
     });
+    patchSession(userId, { hasChosenWaitForStaff: true });
     await postToHandoffSlackThread(session, tenant, `📩 ${customerName}さんが「担当を待つ」を選択しました`);
     return;
   }
@@ -1044,7 +1046,7 @@ async function handleHandoffModeMessage(session, tenant, userId, userMessage, re
     if (noStaffYet && cooledOff && !session.holdingMessageSent) {
       const holdingText = 'ご連絡ありがとうございます。担当が確認し次第ご連絡します。';
       try {
-        await replyToLineWithClient(replyToken, holdingText, tenant, { quickReply: HANDOFF_QUICK_REPLY });
+        await replyToLineWithClient(replyToken, holdingText, tenant, { quickReply: pickHandoffQuickReply(session) });
         patchSession(userId, { holdingMessageSent: true });
         console.log(`[Handoff] ${userId} 一次受け送信（10分SLA超え・QR付き）`);
       } catch (err) {
@@ -1086,7 +1088,7 @@ function scheduleHandoffSla(session, tenant) {
           userId,
           '担当が確認中ですので、少々お待ちください。',
           tenant,
-          HANDOFF_QUICK_REPLY
+          pickHandoffQuickReply(s)
         );
         patchSession(userId, { holdingMessageSent: true });
       } catch (err) {
@@ -1335,7 +1337,7 @@ async function handleFreelanceMode(event, tenant) {
 
     // LINE返信（引き継ぎ時はクイックリプライ付き）
     let replyOpts = {};
-    if (needsHandoff) replyOpts = { quickReply: HANDOFF_QUICK_REPLY };
+    if (needsHandoff) replyOpts = { quickReply: pickHandoffQuickReply(session) };
     else if (needsChoice) replyOpts = { quickReply: CHOICE_QUICK_REPLY };
     await replyToLineWithClient(replyToken, cleanResponse, tenant, replyOpts);
 
@@ -1643,6 +1645,25 @@ const HANDOFF_QUICK_REPLY = {
     { type: 'action', action: { type: 'message', label: '担当を待つ', text: '担当の方を待ちます' } },
   ],
 };
+
+// 「担当を待つ」選択後は「AIに相談する」のみ表示
+const AI_ONLY_QUICK_REPLY = {
+  items: [
+    {
+      type: 'action',
+      action: {
+        type: 'postback',
+        label: '🤖 AIに相談する',
+        data: 'action=resume_ai',
+        displayText: 'AIに相談する',
+      },
+    },
+  ],
+};
+
+function pickHandoffQuickReply(session) {
+  return session && session.hasChosenWaitForStaff ? AI_ONLY_QUICK_REPLY : HANDOFF_QUICK_REPLY;
+}
 
 // ─── 引き継ぎ前の選択用クイックリプライ（[CHOICE_HANDOFF]タグ検出時） ───
 // お客様が悩み・希望スタイルを答えた直後に出し、続けて相談するか担当に繋ぐかを選んでもらう。
