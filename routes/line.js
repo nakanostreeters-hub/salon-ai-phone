@@ -698,12 +698,12 @@ async function sendHandoffToChannels(session, staffName) {
     }
   }
 
-  // 髪の状態（2往復目以降のお客様の回答から抽出）
+  // 要望（顧客が希望する仕上がり・長さ・イメージ・色などの発言を抽出）
   const customerMessages = history.filter(m => m.role === 'user').map(m => m.content);
-  let hairCondition = '';
-  if (customerMessages.length >= 2) {
-    hairCondition = customerMessages.slice(1).join('、');
-  }
+  const requestSentences = customerMessages
+    .filter(m => REQUEST_RE.test(m))
+    .map(m => m.slice(0, 60));
+  const request = requestSentences.length > 0 ? requestSentences.join('、') : '';
 
   // Supabaseカルテからの補足情報
   let karteNotes = '';
@@ -731,7 +731,7 @@ async function sendHandoffToChannels(session, staffName) {
           `💇 指名：${staffName && staffName !== '未定' ? staffName : '指名なし'}`,
           `📅 希望：${dateTime}`,
           `✂️ メニュー：${menuStr}`,
-          hairCondition ? `💬 髪の状態：${hairCondition}` : '',
+          request ? `💬 要望：${request}` : '',
           karteNotes ? `📝 その他：${karteNotes}` : '',
           '━━━━━━━━━━',
           `担当スタッフはこのスレッドで直接返信してください。`,
@@ -769,7 +769,7 @@ async function sendHandoffToChannels(session, staffName) {
           `💇 指名：${staffName || '未定'}`,
           `📅 希望：${dateTime}`,
           `✂️ メニュー：${menuStr}`,
-          hairCondition ? `💬 髪の状態：${hairCondition}` : '',
+          request ? `💬 要望：${request}` : '',
           karteNotes ? `📝 その他：${karteNotes}` : '',
           '━━━━━━━━━━',
         ].filter(Boolean).join('\n'),
@@ -1506,7 +1506,9 @@ const STAFF_MENTION_RE = new RegExp(
   'i'
 );
 const MENU_KEYWORDS = ['カット', 'カラー', 'パーマ', '縮毛矯正', 'トリートメント', 'ヘッドスパ', 'ストレート', 'ブリーチ', '白髪染め', 'リタッチ', 'ハイライト'];
-const HAIR_RE = /(?:髪|毛先|根元|癖|くせ|ダメージ|パサ|ぱさ|量が多|量が少|薄|ボリューム|うねり|広がり|ゴワ|ごわ|絡まり|枝毛)/;
+// 要望抽出用パターン：希望する仕上がり・長さ・イメージ・色などの発言を拾う
+// 例：「少し切るぐらい」「明るめにしたい」「前回と同じで」
+const REQUEST_RE = /(切|染め|短|長く|伸ば|整え|前髪|明る|暗|トーン|仕上が?|イメージ|色|前回と同じ|前と同じ|いつも通り|ぐらい|くらい|ボブ|ロング|ショート|ミディアム|セミロング|感じ)/;
 
 function buildFreelanceHandoffData(session) {
   const history = session.conversationHistory;
@@ -1538,11 +1540,11 @@ function buildFreelanceHandoffData(session) {
     ? STAFF_NAMES_FOR_HANDOFF.find(n => staffMatch[0].startsWith(n)) || staffMatch[1]
     : '指名なし';
 
-  // 髪の状態（お客様が髪について明確に述べた文のみ）
-  const hairSentences = customerMessages
-    .filter(m => HAIR_RE.test(m))
+  // 要望（顧客が希望する仕上がり・長さ・イメージ・色などの発言を抽出）
+  const requestSentences = customerMessages
+    .filter(m => REQUEST_RE.test(m))
     .map(m => m.slice(0, 60));
-  const hairCondition = hairSentences.length > 0 ? hairSentences.join('、') : '—';
+  const request = requestSentences.length > 0 ? requestSentences.join('、') : '—';
 
   // カルテ情報（あれば追加）
   let karteNote = '';
@@ -1574,7 +1576,7 @@ function buildFreelanceHandoffData(session) {
     menu: menuStr,
     dateTime,
     staff: requestedStaff,
-    hairCondition,
+    request,
     karteNote,
   };
 
@@ -1584,7 +1586,7 @@ function buildFreelanceHandoffData(session) {
 ✂️ メニュー: ${summary.menu}
 📅 希望: ${summary.dateTime}
 💇 指名: ${summary.staff}
-💬 髪の状態: ${summary.hairCondition}
+💬 要望: ${summary.request}
 ${karteNote ? `📝 カルテ: ${karteNote}\n` : ''}━━━━━━━━━━
 
 💬 会話ログ:

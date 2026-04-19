@@ -358,11 +358,13 @@ function generateSummary(history) {
   const timeMatch = allCustomerText.match(/(\d{1,2}時(半)?|\d{1,2}:\d{2}|午前|午後)/);
   if (timeMatch) dateTime += ' ' + timeMatch[0];
 
-  // 髪の状態（2往復目のお客様の回答から抽出）
-  let hairCondition = '';
-  if (customerMessages.length >= 2) {
-    hairCondition = customerMessages.slice(1).join('、');
-  }
+  // 要望（顧客が希望する仕上がり・長さ・イメージ・色などの発言を抽出）
+  // 例：「少し切るぐらい」「明るめにしたい」「前回と同じで」
+  const REQUEST_RE = /(切|染め|短|長く|伸ば|整え|前髪|明る|暗|トーン|仕上が?|イメージ|色|前回と同じ|前と同じ|いつも通り|ぐらい|くらい|ボブ|ロング|ショート|ミディアム|セミロング|感じ)/;
+  const requestSentences = customerMessages
+    .filter(m => REQUEST_RE.test(m))
+    .map(m => m.slice(0, 60));
+  const request = requestSentences.length > 0 ? requestSentences.join('、') : '';
 
   // その他の補足情報
   let notes = [];
@@ -377,7 +379,7 @@ function generateSummary(history) {
   summary += `💇 指名：${stylistName}\n`;
   summary += `📅 希望：${dateTime}\n`;
   summary += `✂️ メニュー：${menuStr}\n`;
-  if (hairCondition) summary += `💬 髪の状態：${hairCondition}\n`;
+  if (request) summary += `💬 要望：${request}\n`;
   if (notesStr) summary += `📝 その他：${notesStr}\n`;
   summary += '━━━━━━━━━━\n';
   summary += '担当スタッフはこのスレッドで直接返信してください。';
