@@ -454,6 +454,61 @@ async function linkLineUserToCustomer(customerId, lineUserId) {
   return true;
 }
 
+// ============================================
+// Conversation settings（AI応答ON/OFFなど）
+// ============================================
+async function getConversationAiEnabled(lineUserId) {
+  const client = getClient();
+  if (!client || !lineUserId) return true;
+  const { data, error } = await client
+    .from('conversation_settings')
+    .select('ai_enabled')
+    .eq('line_user_id', lineUserId)
+    .maybeSingle();
+  if (error) {
+    console.warn('[ConversationSettings] 取得失敗:', error.message);
+    return true;
+  }
+  return data ? !!data.ai_enabled : true;
+}
+
+async function setConversationAiEnabled(lineUserId, enabled, tenantId = null) {
+  const client = getClient();
+  if (!client || !lineUserId) return false;
+  const { error } = await client
+    .from('conversation_settings')
+    .upsert(
+      {
+        line_user_id: lineUserId,
+        ai_enabled: !!enabled,
+        tenant_id: tenantId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'line_user_id' },
+    );
+  if (error) {
+    console.warn('[ConversationSettings] 更新失敗:', error.message);
+    return false;
+  }
+  return true;
+}
+
+async function getAiEnabledMap(lineUserIds) {
+  const client = getClient();
+  const map = new Map();
+  if (!client || !Array.isArray(lineUserIds) || lineUserIds.length === 0) return map;
+  const { data, error } = await client
+    .from('conversation_settings')
+    .select('line_user_id, ai_enabled')
+    .in('line_user_id', lineUserIds);
+  if (error) {
+    console.warn('[ConversationSettings] 一括取得失敗:', error.message);
+    return map;
+  }
+  for (const row of data || []) map.set(row.line_user_id, !!row.ai_enabled);
+  return map;
+}
+
 module.exports = {
   findCustomerByPhone,
   findCustomerByLineId,
@@ -470,4 +525,7 @@ module.exports = {
   linkLineUserToCustomer,
   getAdminClient,
   getAnonClient,
+  getConversationAiEnabled,
+  setConversationAiEnabled,
+  getAiEnabledMap,
 };

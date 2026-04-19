@@ -10,6 +10,11 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { getTenant } = require('../config/tenants');
 const { markStaffActive, getSession } = require('../services/lineCounselingSession');
 const { clearSlaTimers } = require('../services/handoffMode');
+const {
+  getConversationAiEnabled,
+  setConversationAiEnabled,
+  getAiEnabledMap,
+} = require('../supabase-client');
 
 const router = express.Router();
 
@@ -539,17 +544,25 @@ router.get('/chats', authMiddleware, async (req, res) => {
       }
     }
 
+    // AI ON/OFF フラグを一括取得
+    const lineUserIds = [...chatMap.keys()];
+    const aiEnabledMap = await getAiEnabledMap(lineUserIds);
+
     const chats = [...chatMap.values()].map(chat => {
       const session = getSession(chat.lineUserId);
       // 実行中のセッションがあればその conversationState を、無ければ履歴から推測
       const handoff_status = session
         ? session.conversationState
         : (chat.hasHandoff ? 'handoff_pending' : 'ai_active');
+      const aiEnabled = aiEnabledMap.has(chat.lineUserId)
+        ? aiEnabledMap.get(chat.lineUserId)
+        : true;
       return {
         ...chat,
         customerName: customerNames[chat.customerId] || null,
         status: chat.hasHandoff ? 'handoff' : 'ai_active',
         handoff_status,
+        aiEnabled,
       };
     });
 
@@ -604,8 +617,9 @@ router.get('/chats/:lineUserId', authMiddleware, async (req, res) => {
 
     const session = getSession(req.params.lineUserId);
     const handoff_status = session ? session.conversationState : null;
+    const aiEnabled = await getConversationAiEnabled(req.params.lineUserId);
 
-    res.json({ messages: data, customer, visits, handoff_status });
+    res.json({ messages: data, customer, visits, handoff_status, aiEnabled });
   } catch (err) {
     console.error('[API /chats/:id] Error:', err.message);
     res.status(500).json({ error: 'メッセージの取得に失敗しました' });
@@ -675,6 +689,39 @@ router.post('/chats/:lineUserId/reply', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('[API /chats/reply] Error:', err.message);
     res.status(500).json({ error: '送信に失敗しました' });
+  }
+});
+
+// PATCH /api/chats/:lineUserId/ai-enabled - AI応答ON/OFFトグル
+router.patch('/chats/:lineUserId/ai-enabled', authMiddleware, async (req, res) => {
+  const { enabled, tenantId } = req.body;
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled (boolean) が必要です' });
+  }
+  try {
+    const ok = await setConversationAiEnabled(
+      req.params.lineUserId,
+      enabled,
+      tenantId || null,
+    );
+    if (!ok) return res.status(500).json({ error: '更新に失敗しました' });
+
+    // 監査ログ
+    const staffName = req.user?.user_metadata?.name || req.user?.email || 'unknown';
+    try {
+      await req.supabase.rpc('log_customer_access', {
+        p_salon_id: process.env.SALON_ID || null,
+        p_action: 'ai_toggle',
+        p_actor: `staff:${staffName}`,
+        p_customer_id: null,
+        p_details: { lineUserId: req.params.lineUserId, enabled },
+      });
+    } catch (_) {}
+
+    res.json({ success: true, aiEnabled: enabled });
+  } catch (err) {
+    console.error('[API /chats/ai-enabled] Error:', err.message);
+    res.status(500).json({ error: 'トグル更新に失敗しました' });
   }
 });
 

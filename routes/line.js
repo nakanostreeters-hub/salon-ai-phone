@@ -69,7 +69,7 @@ const { buildLineCounselingPrompt } = require('../prompts/lineCounseling');
 const { buildFreelanceCounselingPrompt } = require('../prompts/freelanceCounseling');
 const { findStaffByName } = require('../config/staff');
 const { getTenant } = require('../config/tenants');
-const { getCustomerProfile, saveConversationLog, saveCustomerAndAiMessages, uploadImageToStorage, hasPriorConversation, logCustomerAccess } = require('../supabase-client');
+const { getCustomerProfile, saveConversationLog, saveCustomerAndAiMessages, uploadImageToStorage, hasPriorConversation, logCustomerAccess, getConversationAiEnabled } = require('../supabase-client');
 const { buildKarteContext } = require('../ai-receptionist');
 const { CHANNEL_ALL, CHANNEL_NEW, getChannelForStylist } = require('../config/slackChannels');
 
@@ -888,6 +888,34 @@ router.post('/:tenantId', async (req, res) => {
 // 引き継ぎ済みモード（handoff mode）
 // ============================================
 
+// AI OFF時のお客様メッセージを Slack に通知（スタッフが気付けるように）
+async function postAiDisabledNotice(session, tenant, userMessage) {
+  if (shouldSkipSlack(session)) return;
+  const slack = getSlackClient();
+  if (!slack) return;
+  const displayName = session.displayName || 'お客様';
+  const text = `🔴 *AI応答停止中* — お客様からの新規メッセージ\n👤 ${displayName}\n>${userMessage}`;
+
+  // 引き継ぎスレッドがあればそこに、なければ CHANNEL_ALL（あれば既存スレッドに）
+  try {
+    if (session.slackStylistChannelId && session.slackStylistThreadTs) {
+      await slack.chat.postMessage({
+        channel: session.slackStylistChannelId,
+        thread_ts: session.slackStylistThreadTs,
+        text,
+      });
+      return;
+    }
+    if (CHANNEL_ALL) {
+      const payload = { channel: CHANNEL_ALL, text };
+      if (session.slackAllThreadTs) payload.thread_ts = session.slackAllThreadTs;
+      await slack.chat.postMessage(payload);
+    }
+  } catch (err) {
+    console.warn('[AI OFF Notice] Slack通知失敗:', err.message);
+  }
+}
+
 // SlackスタイリストスレッドにテキストをポストするヘルパDM (失敗は握りつぶす)
 async function postToHandoffSlackThread(session, tenant, text) {
   if (shouldSkipSlack(session)) return;
@@ -1247,6 +1275,25 @@ async function handleFreelanceMode(event, tenant) {
       imageUrl,
       timestamp: new Date(),
     });
+    return;
+  }
+
+  // ─── AI応答 OFF（mycon のトグルでスタッフが一時停止中） ───
+  // AI も linking も走らせず、メッセージをDBに残して Slack にだけ通知する。
+  const aiEnabled = await getConversationAiEnabled(userId);
+  if (!aiEnabled) {
+    console.log(`[Freelance] ${userId} ai_enabled=false: AI停止・Slack通知のみ`);
+    await saveConversationLog({
+      tenantId: tenant.id,
+      customerId: session.customerProfile?.customer?.id || null,
+      lineUserId: userId,
+      senderType: 'customer',
+      message: userMessage,
+      messageType: isImage ? 'image' : 'text',
+      imageUrl,
+      timestamp: new Date(),
+    });
+    await postAiDisabledNotice(session, tenant, userMessage);
     return;
   }
 

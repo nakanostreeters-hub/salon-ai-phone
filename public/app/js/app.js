@@ -5,7 +5,7 @@
 
 import {
   getToken, getUser, login, logout,
-  getChats, getChatMessages, sendChatReply,
+  getChats, getChatMessages, sendChatReply, setChatAiEnabled,
   getCustomers, getCustomerDetail,
   getDashboard, getDashboardStaff, getDashboardAlerts, getDashboardUnanswered,
   getDashboardAiSuggestions,
@@ -14,7 +14,7 @@ import {
 
 // ─── State ───
 let currentPage = '';
-let chatState = { chats: [], activeChat: null, messages: [], customer: null, visits: [], filter: 'all' };
+let chatState = { chats: [], activeChat: null, messages: [], customer: null, visits: [], filter: 'all', aiEnabled: true };
 let customerState = { customers: [], total: 0, search: '', segment: 'all', sort: 'created_at', order: 'desc' };
 
 // ─── DOM ───
@@ -267,7 +267,13 @@ async function renderChatPage() {
             <button class="btn-icon chat-back-btn" id="chat-back-btn" style="display:none;">&#8592;</button>
             <h3 id="chat-partner-name">チャットを選択してください</h3>
           </div>
-          <button class="btn btn-outline btn-sm" id="karte-toggle-btn">カルテ</button>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="btn btn-sm" id="ai-toggle-btn" style="display:none;"></button>
+            <button class="btn btn-outline btn-sm" id="karte-toggle-btn">カルテ</button>
+          </div>
+        </div>
+        <div id="ai-disabled-banner" style="display:none;padding:8px 12px;background:#fee;border-bottom:1px solid #fbb;color:#c00;font-size:13px;font-weight:600;">
+          ⚠️ AI応答停止中（スタッフ対応モード）
         </div>
         <div class="chat-messages-body" id="chat-messages-body">
           <div class="chat-empty">左のリストからお客様を選択してください</div>
@@ -306,6 +312,26 @@ async function renderChatPage() {
   // Event: search
   document.getElementById('chat-search')?.addEventListener('input', (e) => {
     renderChatList(e.target.value);
+  });
+
+  // Event: AI応答ON/OFFトグル
+  document.getElementById('ai-toggle-btn')?.addEventListener('click', async () => {
+    if (!chatState.activeChat) return;
+    const btn = document.getElementById('ai-toggle-btn');
+    const next = !chatState.aiEnabled;
+    btn.disabled = true;
+    try {
+      await setChatAiEnabled(chatState.activeChat, next);
+      chatState.aiEnabled = next;
+      const chat = chatState.chats.find(c => c.lineUserId === chatState.activeChat);
+      if (chat) chat.aiEnabled = next;
+      renderAiToggle();
+      renderChatList();
+    } catch (err) {
+      alert('AI応答の切り替えに失敗しました: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   // Event: karte toggle
@@ -370,13 +396,15 @@ function renderChatList(searchQuery = '') {
     const initial = name.charAt(0);
     const time = formatTime(chat.lastAt);
     const isActive = chatState.activeChat === chat.lineUserId;
+    const aiOff = chat.aiEnabled === false;
+    const aiDot = `<span title="${aiOff ? 'AI応答OFF' : 'AI応答ON'}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${aiOff ? '#e53e3e' : '#38a169'};margin-right:6px;vertical-align:middle;"></span>`;
 
     return `
       <div class="chat-item ${isActive ? 'active' : ''}" data-line-user-id="${chat.lineUserId}">
         <div class="chat-item-avatar">${initial}</div>
         <div class="chat-item-body">
           <div class="chat-item-name">
-            ${escapeHtml(name)}
+            ${aiDot}${escapeHtml(name)}
             <span class="status-badge ${chat.status}">${statusLabel(chat.status)}</span>
           </div>
           <div class="chat-item-preview">${escapeHtml(chat.lastMessage || '')}</div>
@@ -412,15 +440,37 @@ async function openChat(lineUserId) {
     chatState.messages = data.messages || [];
     chatState.customer = data.customer;
     chatState.visits = data.visits || [];
+    chatState.aiEnabled = data.aiEnabled !== false;
 
     const name = customerName(data.customer) || 'ゲスト';
     document.getElementById('chat-partner-name').textContent = name;
     document.getElementById('chat-input-area').style.display = '';
 
+    renderAiToggle();
     renderMessages();
     renderKarte();
   } catch (err) {
     messagesBody.innerHTML = `<div class="empty-state"><div class="empty-state-text">メッセージの読み込みに失敗しました</div></div>`;
+  }
+}
+
+function renderAiToggle() {
+  const btn = document.getElementById('ai-toggle-btn');
+  const banner = document.getElementById('ai-disabled-banner');
+  if (!btn || !banner) return;
+  btn.style.display = chatState.activeChat ? '' : 'none';
+  if (chatState.aiEnabled) {
+    btn.textContent = '🟢 AI応答ON';
+    btn.style.background = '#e6fffa';
+    btn.style.color = '#22543d';
+    btn.style.border = '1px solid #38a169';
+    banner.style.display = 'none';
+  } else {
+    btn.textContent = '🔴 AI応答OFF';
+    btn.style.background = '#fff5f5';
+    btn.style.color = '#c53030';
+    btn.style.border = '1px solid #e53e3e';
+    banner.style.display = '';
   }
 }
 

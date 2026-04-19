@@ -88,6 +88,13 @@ async function sendChatReply(lineUserId, message, tenantId) {
   });
 }
 
+async function setChatAiEnabled(lineUserId, enabled, tenantId) {
+  return apiFetch(`/chats/${encodeURIComponent(lineUserId)}/ai-enabled`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled, tenantId }),
+  });
+}
+
 // --- Customers ---
 async function getCustomers(params = {}) {
   const qs = new URLSearchParams(params).toString();
@@ -126,7 +133,7 @@ async function getDashboardProactiveSuggestions() {
 export {
   getToken, setToken, clearToken, getUser, setUser,
   login, logout,
-  getChats, getChatMessages, sendChatReply,
+  getChats, getChatMessages, sendChatReply, setChatAiEnabled,
   getCustomers, getCustomerDetail,
   getDashboard, getDashboardStaff, getDashboardAlerts, getDashboardUnanswered,
   getDashboardAiSuggestions,
