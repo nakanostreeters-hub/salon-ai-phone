@@ -346,6 +346,69 @@ async function hasPriorConversation(lineUserId) {
   return (count || 0) > 0;
 }
 
+/**
+ * conversation_logs から LINE userId の過去会話履歴を復元し、
+ * Claude API に渡せる `[{role, content}]` 配列で返す。
+ *
+ * 設計書 Phase 1 追加分。本関数は Phase 1 時点ではどこからも呼ばれない。
+ * Phase 3 で hydrateSessionFromDb から利用される想定。
+ *
+ * 例外時は必ず空配列を返し、throw しない（応答全体を落とさないため）。
+ */
+async function loadConversationHistoryFromDB(lineUserId, opts = {}) {
+  const {
+    days = 30,
+    maxMessages = 100,
+    includeSenderTypes = ['customer', 'ai'],
+    maxApproxTokens = 8000,
+  } = opts;
+
+  const client = getClient();
+  if (!client || !lineUserId) return [];
+
+  try {
+    const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await client
+      .from('conversation_logs')
+      .select('sender_type, message, customer_message, ai_response, created_at')
+      .eq('line_user_id', lineUserId)
+      .in('sender_type', includeSenderTypes)
+      .gte('created_at', sinceIso)
+      .order('created_at', { ascending: false })
+      .limit(maxMessages);
+
+    if (error) {
+      console.warn('[History] loadConversationHistoryFromDB 失敗:', error.message);
+      return [];
+    }
+
+    const rows = (data || []).slice().reverse();
+    const AI_INTERNAL_LOG = /^[（(]/;
+
+    const out = [];
+    for (const row of rows) {
+      const text =
+        row.message ??
+        (row.sender_type === 'customer' ? row.customer_message : row.ai_response);
+      if (!text) continue;
+      if (AI_INTERNAL_LOG.test(String(text))) continue;
+      const role = row.sender_type === 'customer' ? 'user' : 'assistant';
+      out.push({ role, content: String(text) });
+    }
+
+    let approx = out.reduce((s, m) => s + m.content.length * 0.5, 0);
+    while (approx > maxApproxTokens && out.length > 1) {
+      const dropped = out.shift();
+      approx -= dropped.content.length * 0.5;
+    }
+
+    return out;
+  } catch (err) {
+    console.warn('[History] loadConversationHistoryFromDB 例外:', err.message);
+    return [];
+  }
+}
+
 // ============================================
 // 顧客名検索（紐づけ用）
 // ============================================
@@ -519,6 +582,7 @@ module.exports = {
   saveCustomerAndAiMessages,
   uploadImageToStorage,
   hasPriorConversation,
+  loadConversationHistoryFromDB,
   logCustomerAccess,
   findCustomersByName,
   findCustomersByPhoneLast4,
