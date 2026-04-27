@@ -25,7 +25,7 @@ BEGIN;
 -- 1. line_sessions 新規テーブル -------------------------------------
 CREATE TABLE IF NOT EXISTS public.line_sessions (
   line_user_id              text         PRIMARY KEY,
-  salon_id                  uuid         NOT NULL,
+  salon_id                  text         NOT NULL,
   conversation_state        text         NOT NULL DEFAULT 'bot_active',
   status                    text         NOT NULL DEFAULT 'counseling',
   assigned_staff_id         text,
