@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>じゅうみんカード — PREMIER MODELS むら</title>
+<style>
+  :root {
+    --bg-top: #bfe3ff;
+    --bg-mid: #e6f6d8;
+    --bg-bottom: #c7eaa9;
+    --card: #fffdf7;
+    --card-alt: #fff8e7;
+    --ink: #3d3a2f;
+    --ink-soft: #6b6657;
+    --muted: #9a907a;
+    --border: #f2ead1;
+    --shadow-soft: 0 6px 0 #e9dcb6, 0 10px 22px rgba(90, 70, 30, 0.14);
+    --shadow-inset: inset 0 2px 0 rgba(255,255,255,0.7);
+    --pink: #ffb4c7;
+    --pink-deep: #ff6f92;
+    --mint: #a9dfb7;
+    --mint-deep: #4ca97a;
+    --lemon: #ffe49a;
+    --lemon-deep: #d9a23a;
+    --sky: #a7d8ff;
+    --sky-deep: #4a95d4;
+    --violet-a: #c9b3ff;
+    --violet-b: #8a7ddb;
+    --violet-c: #6e5cc4;
+    --radius-lg: 28px;
+    --radius-md: 20px;
+    --radius-sm: 14px;
+    --font: "Hiragino Maru Gothic ProN", "M PLUS Rounded 1c", "Quicksand",
+            "Yu Gothic", "ヒラギノ角ゴ ProN", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+  }
+  body {
+    font-family: var(--font);
+    color: var(--ink);
+    background:
+      radial-gradient(circle at 20% 10%, #ffffff80 0, transparent 40%),
+      radial-gradient(circle at 80% 0%, #ffffff66 0, transparent 35%),
+      linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 55%, var(--bg-bottom) 100%);
+    background-attachment: fixed;
+    font-size: 15px;
+    line-height: 1.7;
+    letter-spacing: 0.02em;
+    -webkit-font-smoothing: antialiased;
+    padding: 18px 14px 60px;
+  }
+
+  /* ─── ふわふわ雲 ─── */
+  body::before, body::after {
+    content: "";
+    position: fixed;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.7);
+    filter: blur(1px);
+    z-index: 0;
+    pointer-events: none;
+  }
+  body::before { width: 120px; height: 40px; top: 40px; left: -20px; }
+  body::after  { width: 160px; height: 50px; top: 120px; right: -30px; }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  /* ─── ヘッダー ─── */
+  .page-header {
+    text-align: center;
+    padding: 8px 0 18px;
+    color: #2a4a3c;
+  }
+  .page-header .salon {
+    display: inline-block;
+    background: #fff;
+    color: #4ca97a;
+    padding: 6px 18px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 0.08em;
+    box-shadow: 0 3px 0 #d9c890, 0 6px 14px rgba(0,0,0,0.08);
+  }
+  .page-header .card-label {
+    margin-top: 10px;
+    font-size: 22px;
+    font-weight: bold;
+    color: #3f6b55;
+    text-shadow: 0 2px 0 #ffffff, 0 3px 4px rgba(0,0,0,0.08);
+  }
+  .page-header .card-label .no {
+    color: var(--pink-deep);
+  }
+
+  /* ─── カード共通 ─── */
+  .card {
+    background: var(--card);
+    border-radius: var(--radius-lg);
+    padding: 22px 20px;
+    box-shadow: var(--shadow-soft);
+    margin-bottom: 18px;
+    border: 2px solid #fff;
+    position: relative;
+  }
+  .card h2 {
+    margin: 0 0 14px;
+    font-size: 17px;
+    color: var(--mint-deep);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* 葉っぱデコ */
+  .leaf {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    pointer-events: none;
+    opacity: 0.8;
+  }
+
+  /* ─── キャラクターカード ─── */
+  .char-card {
+    text-align: center;
+    padding: 26px 20px 24px;
+    background:
+      radial-gradient(circle at 50% 20%, #fff 0%, #fffaee 60%, #fff2d0 100%);
+  }
+  .animal-circle {
+    width: 150px;
+    height: 150px;
+    margin: 0 auto 12px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow:
+      inset 0 -6px 0 #f3e7c4,
+      0 6px 0 #e9dcb6,
+      0 10px 22px rgba(90, 70, 30, 0.16);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .animal-circle svg {
+    width: 110px;
+    height: 110px;
+  }
+  .animal-circle .sparkle {
+    position: absolute;
+    font-size: 20px;
+  }
+  .animal-circle .sparkle.s1 { top: -4px; right: 6px; }
+  .animal-circle .sparkle.s2 { bottom: 6px; left: -4px; font-size: 16px; }
+
+  .char-name {
+    font-size: 24px;
+    font-weight: bold;
+    color: var(--ink);
+    margin: 6px 0 2px;
+  }
+  .char-name .animal-suffix {
+    color: var(--mint-deep);
+    margin-left: 6px;
+  }
+  .char-heart {
+    font-size: 18px;
+    color: var(--pink-deep);
+    font-weight: bold;
+  }
+  .char-heart .small {
+    font-size: 13px;
+    color: var(--muted);
+    margin-left: 6px;
+    font-weight: normal;
+  }
+  .char-heart-note {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: normal;
+    margin-top: 2px;
+  }
+
+  /* ─── ご無沙汰バッジ（右上） ─── */
+  .away-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: #fff1dc;
+    color: #b35a1a;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 0 #e9c58a, inset 0 1px 0 rgba(255,255,255,0.7);
+    z-index: 2;
+  }
+
+  /* ─── 次のマイルストーン（ぼんやり表示） ─── */
+  .reward.next-goal {
+    background: #f7f3e6;
+    border-style: dashed;
+    opacity: 0.7;
+  }
+  .reward.next-goal .emoji {
+    filter: grayscale(0.3);
+    opacity: 0.75;
+  }
+  .reward.next-goal .label {
+    color: var(--ink-soft);
+    font-weight: normal;
+  }
+  .reward.next-goal .mini {
+    display: block;
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* ─── 16タイプ枠 ─── */
+  .mbti-box {
+    margin: 18px -4px 0;
+    padding: 18px 16px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, var(--violet-a) 0%, var(--violet-b) 55%, var(--violet-c) 100%);
+    color: #fff;
+    text-align: center;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.35), 0 4px 0 #5746a6;
+  }
+  .mbti-box .mbti-label {
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    opacity: 0.9;
+  }
+  .mbti-box .mbti-4 {
+    font-size: 34px;
+    font-weight: bold;
+    letter-spacing: 0.12em;
+    margin: 2px 0 2px;
+    text-shadow: 0 2px 0 rgba(0,0,0,0.18);
+  }
+  .mbti-box .mbti-nick {
+    font-size: 17px;
+    color: #fff7ce;
+  }
+  .mbti-box.pending .mbti-4 {
+    font-size: 18px;
+    letter-spacing: 0.04em;
+    opacity: 0.9;
+  }
+  .mbti-box.pending .mbti-nick { display: none; }
+
+  /* ─── じょうたい・バッジ ─── */
+  .stat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+    justify-content: center;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: bold;
+    box-shadow: 0 2px 0 rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.7);
+  }
+  .badge.state-NEW      { background: #fff3cf; color: #c68a1a; }
+  .badge.state-げんき    { background: #d6f4df; color: #2f8b52; }
+  .badge.state-おやすみ  { background: #dfe9f5; color: #456f96; }
+  .badge.state-とびっきり{ background: #ffd9e6; color: #c03265; }
+  .badge.visit  { background: #e7f1ff; color: #3a6da8; }
+  .badge.recent { background: #fff2d7; color: #b07818; }
+
+  /* ─── セクション見出し ─── */
+  .sec-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--mint-deep);
+    margin: 0 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .sec-body {
+    font-size: 15px;
+    color: var(--ink-soft);
+    line-height: 1.85;
+  }
+  .tips {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .tips li {
+    position: relative;
+    padding: 8px 10px 8px 32px;
+    margin-bottom: 6px;
+    background: #fffaec;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    font-size: 14.5px;
+    line-height: 1.7;
+  }
+  .tips li::before {
+    content: "🌿";
+    position: absolute;
+    left: 8px;
+    top: 6px;
+  }
+
+  /* ─── ことばのおくりもの ─── */
+  .letter-card {
+    background:
+      repeating-linear-gradient(
+        180deg,
+        #fff 0 28px,
+        #fff4d9 28px 29px
+      );
+    border: 1.5px dashed #e5cf8a;
+    border-radius: var(--radius-md);
+    padding: 16px 16px 18px;
+    color: #554b2e;
+    font-size: 14.5px;
+    line-height: 28px;
+    white-space: pre-wrap;
+  }
+  .letter-tag {
+    display: inline-block;
+    margin-bottom: 8px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #fff;
+    color: var(--pink-deep);
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 0 #e9dcb6;
+  }
+  .copy-btn {
+    margin-top: 10px;
+    padding: 8px 14px;
+    border: none;
+    border-radius: 999px;
+    background: var(--pink-deep);
+    color: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 3px 0 #c5436a;
+  }
+  .copy-btn:active { transform: translateY(1px); box-shadow: 0 2px 0 #c5436a; }
+
+  /* ─── なかよしさん ─── */
+  .friend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: #fff4f8;
+    border-radius: var(--radius-sm);
+  }
+  .friend .bubble {
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    background: var(--pink);
+    color: #fff;
+    font-weight: bold;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.5);
+  }
+  .friend .name { font-weight: bold; }
+  .friend .reason { font-size: 13px; color: var(--ink-soft); }
+
+  /* ─── ごほうびバッジ ─── */
+  .reward-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px;
+  }
+  .reward {
+    background: #fffaec;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 8px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    box-shadow: inset 0 2px 0 #fff;
+  }
+  .reward .emoji { font-size: 28px; display: block; margin-bottom: 2px; }
+  .reward .label { font-weight: bold; color: var(--ink); }
+
+  /* ─── 状態 ─── */
+  .loading-wrap, .error-wrap {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--ink-soft);
+  }
+  .spinner {
+    display: inline-block;
+    width: 28px; height: 28px;
+    border: 4px solid #fff;
+    border-right-color: var(--mint-deep);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .hidden { display: none !important; }
+
+  /* ─── レスポンシブ ─── */
+  @media (min-width: 640px) {
+    body { padding: 28px 20px 80px; font-size: 16px; }
+    .animal-circle { width: 180px; height: 180px; }
+    .animal-circle svg { width: 130px; height: 130px; }
+    .char-name { font-size: 26px; }
+  }
+
+  @media (max-width: 360px) {
+    .mbti-box .mbti-4 { font-size: 28px; }
+    .char-name { font-size: 22px; }
+  }
+
+  /* 小さなふわふわアニメ */
+  @keyframes bob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-4px); }
+  }
+  .animal-circle svg { animation: bob 3.2s ease-in-out infinite; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="page-header">
+    <div class="salon">🌿 PREMIER MODELS むら</div>
+    <div class="card-label">じゅうみんカード <span class="no" id="karteNoLabel">#----</span></div>
+  </div>
+
+  <div id="loading" class="loading-wrap">
+    <div class="spinner"></div>
+    <p>カードを よみこんでいます…</p>
+  </div>
+
+  <div id="errorBox" class="card hidden">
+    <div class="error-wrap">
+      <p id="errorMsg">よみこみに失敗しました</p>
+    </div>
+  </div>
+
+  <div id="content" class="hidden">
+    <!-- キャラクターカード -->
+    <section class="card char-card">
+      <span class="leaf" id="leafLeft" style="top:10px;left:10px">🍃</span>
+      <span class="leaf" id="leafRight" style="top:10px;right:10px;transform:scaleX(-1)">🍃</span>
+      <span class="away-badge hidden" id="awayBadge">⚠️ ご無沙汰</span>
+
+      <div class="animal-circle">
+        <span class="sparkle s1">✨</span>
+        <span class="sparkle s2">💫</span>
+        <div id="animalSvg"></div>
+      </div>
+      <div class="char-name">
+        <span id="charName">—</span>
+        <span class="animal-suffix" id="animalSuffix"></span>
+      </div>
+      <div class="char-heart">
+        ♥ <span id="heartLevel">—</span>
+        <span class="small">なかよしレベル</span>
+        <div class="char-heart-note">来店ごとに +1</div>
+      </div>
+
+      <div class="mbti-box" id="mbtiBox">
+        <div class="mbti-label">16タイプ</div>
+        <div class="mbti-4" id="mbti4">----</div>
+        <div class="mbti-nick" id="mbtiNick">—</div>
+      </div>
+
+      <div class="stat-row" id="statRow"></div>
+    </section>
+
+    <!-- こんなひと -->
+    <section class="card">
+      <h2 class="sec-title">❤️ こんなひと</h2>
+      <div class="sec-body" id="personalityBody">—</div>
+    </section>
+
+    <!-- おもてなしのヒント -->
+    <section class="card">
+      <h2 class="sec-title">🎯 おもてなしのヒント</h2>
+      <ul class="tips" id="tipsList"></ul>
+    </section>
+
+    <!-- なかよしさん -->
+    <section class="card hidden" id="friendSection">
+      <h2 class="sec-title">💞 なかよしさん</h2>
+      <div class="friend">
+        <div class="bubble" id="friendInitial">—</div>
+        <div>
+          <div class="name" id="friendName">—</div>
+          <div class="reason" id="friendReason">—</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ことばのおくりもの -->
+    <section class="card">
+      <h2 class="sec-title">💌 ことばのおくりもの</h2>
+      <div class="letter-tag" id="letterTag">LINEメッセージ案</div>
+      <div class="letter-card" id="letterBody">—</div>
+      <button class="copy-btn" id="copyBtn">💌 コピーする</button>
+    </section>
+
+    <!-- ごほうび -->
+    <section class="card">
+      <h2 class="sec-title">🎁 ごほうび</h2>
+      <div class="reward-grid" id="rewardGrid"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+  // ─────────────────────────────────────────────
+  // 動物 SVG — 素朴で丸っこい
+  // ─────────────────────────────────────────────
+  const ANIMAL_SVG = {
+    cat: `
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="24,22 34,10 38,30" fill="#f6c89a"/>
+        <polygon points="76,22 66,10 62,30" fill="#f6c89a"/>
+        <circle cx="50" cy="56" r="34" fill="#f9d3a8"/>
+        <circle cx="40" cy="52" r="3.5" fill="#3d3a2f"/>
+        <circle cx="60" cy="52" r="3.5" fill="#3d3a2f"/>
+        <path d="M46 64 q4 4 8 0" stroke="#3d3a2f" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        <circle cx="32" cy="64" r="4" fill="#ffb4c7" opacity="0.7"/>
+        <circle cx="68" cy="64" r="4" fill="#ffb4c7" opacity="0.7"/>
+      </svg>`,
+    rabbit: `
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="38" cy="22" rx="7" ry="18" fill="#ffffff" stroke="#e8d8c5" stroke-width="1.5"/>
+        <ellipse cx="62" cy="22" rx="7" ry="18" fill="#ffffff" stroke="#e8d8c5" stroke-width="1.5"/>
+        <ellipse cx="38" cy="22" rx="3" ry="11" fill="#ffc5d2"/>
+        <ellipse cx="62" cy="22" rx="3" ry="11" fill="#ffc5d2"/>
+        <circle cx="50" cy="58" r="32" fill="#ffffff" stroke="#e8d8c5" stroke-width="1.5"/>
+        <circle cx="41" cy="54" r="3.5" fill="#3d3a2f"/>
+        <circle cx="59" cy="54" r="3.5" fill="#3d3a2f"/>
+        <path d="M47 66 q3 3 6 0" stroke="#3d3a2f" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        <circle cx="33" cy="64" r="4" fill="#ffc5d2"/>
+        <circle cx="67" cy="64" r="4" fill="#ffc5d2"/>
+      </svg>`,
+    dog: `
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="26" cy="34" rx="10" ry="16" fill="#c79361"/>
+        <ellipse cx="74" cy="34" rx="10" ry="16" fill="#c79361"/>
+        <circle cx="50" cy="56" r="34" fill="#e8b97c"/>
+        <circle cx="41" cy="54" r="3.5" fill="#3d3a2f"/>
+        <circle cx="59" cy="54" r="3.5" fill="#3d3a2f"/>
+        <ellipse cx="50" cy="64" rx="4" ry="3" fill="#3d3a2f"/>
+        <path d="M44 72 q6 5 12 0" stroke="#3d3a2f" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+      </svg>`,
+    sheep: `
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="30" cy="40" r="10" fill="#fff" stroke="#d6c8a4" stroke-width="1.5"/>
+        <circle cx="70" cy="40" r="10" fill="#fff" stroke="#d6c8a4" stroke-width="1.5"/>
+        <circle cx="26" cy="58" r="10" fill="#fff" stroke="#d6c8a4" stroke-width="1.5"/>
+        <circle cx="74" cy="58" r="10" fill="#fff" stroke="#d6c8a4" stroke-width="1.5"/>
+        <circle cx="50" cy="28" r="10" fill="#fff" stroke="#d6c8a4" stroke-width="1.5"/>
+        <circle cx="50" cy="76" r="12" fill="#fff" stroke="#d6c8a4" stroke-width="1.5"/>
+        <circle cx="50" cy="56" r="26" fill="#fff4d9" stroke="#d6c8a4" stroke-width="1.5"/>
+        <ellipse cx="42" cy="54" rx="3" ry="4" fill="#3d3a2f"/>
+        <ellipse cx="58" cy="54" rx="3" ry="4" fill="#3d3a2f"/>
+        <path d="M46 64 q4 3 8 0" stroke="#3d3a2f" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <circle cx="35" cy="62" r="3.5" fill="#ffc5d2" opacity="0.7"/>
+        <circle cx="65" cy="62" r="3.5" fill="#ffc5d2" opacity="0.7"/>
+      </svg>`,
+    squirrel: `
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <path d="M80 70 q18 -6 10 -28 q-10 -10 -18 10 z" fill="#d48c4a"/>
+        <circle cx="50" cy="56" r="30" fill="#e8a766"/>
+        <ellipse cx="50" cy="68" rx="18" ry="14" fill="#fff2d9"/>
+        <circle cx="40" cy="50" r="3.5" fill="#3d3a2f"/>
+        <circle cx="58" cy="50" r="3.5" fill="#3d3a2f"/>
+        <ellipse cx="49" cy="60" rx="3" ry="2" fill="#3d3a2f"/>
+        <path d="M44 66 q5 4 10 0" stroke="#3d3a2f" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>`,
+    panda: `
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="28" cy="26" r="10" fill="#3d3a2f"/>
+        <circle cx="72" cy="26" r="10" fill="#3d3a2f"/>
+        <circle cx="50" cy="56" r="34" fill="#ffffff" stroke="#c9c2ac" stroke-width="1.5"/>
+        <ellipse cx="40" cy="54" rx="8" ry="10" fill="#3d3a2f"/>
+        <ellipse cx="60" cy="54" rx="8" ry="10" fill="#3d3a2f"/>
+        <circle cx="40" cy="54" r="2.5" fill="#fff"/>
+        <circle cx="60" cy="54" r="2.5" fill="#fff"/>
+        <ellipse cx="50" cy="66" rx="3.5" ry="2.5" fill="#3d3a2f"/>
+        <path d="M45 72 q5 4 10 0" stroke="#3d3a2f" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>`,
+    bear: `
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="26" cy="28" r="10" fill="#a87043"/>
+        <circle cx="74" cy="28" r="10" fill="#a87043"/>
+        <circle cx="26" cy="28" r="5" fill="#d8a878"/>
+        <circle cx="74" cy="28" r="5" fill="#d8a878"/>
+        <circle cx="50" cy="56" r="34" fill="#c79361"/>
+        <ellipse cx="50" cy="66" rx="16" ry="12" fill="#fff4d9"/>
+        <circle cx="40" cy="52" r="3.5" fill="#3d3a2f"/>
+        <circle cx="60" cy="52" r="3.5" fill="#3d3a2f"/>
+        <ellipse cx="50" cy="62" rx="3.5" ry="2.5" fill="#3d3a2f"/>
+        <path d="M45 70 q5 4 10 0" stroke="#3d3a2f" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>`,
+    fox: `
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="22,20 36,14 32,38" fill="#e48a3a"/>
+        <polygon points="78,20 64,14 68,38" fill="#e48a3a"/>
+        <polygon points="26,22 34,18 32,32" fill="#fff"/>
+        <polygon points="74,22 66,18 68,32" fill="#fff"/>
+        <circle cx="50" cy="56" r="32" fill="#f0a85a"/>
+        <path d="M50 38 q-14 0 -22 12 q22 4 22 -12z" fill="#fff"/>
+        <path d="M50 38 q14 0 22 12 q-22 4 -22 -12z" fill="#fff"/>
+        <circle cx="40" cy="54" r="3.2" fill="#3d3a2f"/>
+        <circle cx="60" cy="54" r="3.2" fill="#3d3a2f"/>
+        <ellipse cx="50" cy="64" rx="3.2" ry="2.2" fill="#3d3a2f"/>
+        <path d="M45 70 q5 4 10 0" stroke="#3d3a2f" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>`,
+  };
+
+  const ANIMAL_JA = {
+    cat: 'ねこ', rabbit: 'うさぎ', dog: 'いぬ', sheep: 'ひつじ',
+    squirrel: 'りす', panda: 'ぱんだ', bear: 'くま', fox: 'きつね',
+  };
+
+  // ─────────────────────────────────────────────
+  // 16タイプ別テンプレート（16種すべて収録）
+  // ─────────────────────────────────────────────
+  const MBTI_TEMPLATES = {
+    INFJ: {
+      nickname: '静かな賢者',
+      personality:
+        '内に深い世界を持つ、やさしくて芯のある方。言葉を選んで話すので、口数は多くなくても、交わす一言一言に温度があります。' +
+        '人の気持ちにとても敏感で、場の空気を察するちから、先を読むちからはこのサロンでもピカイチ。' +
+        '「わかってくれる人」に安心する、おくゆかしいじゅうみんさんです。',
+      tips: [
+        '急かさず、ゆっくり話を聞いてあげてください。沈黙は「考え中」のサインです。',
+        '選択肢は多くしすぎず、2〜3個に絞ってそっと提案するのが喜ばれます。',
+        '「いつもの」を覚えていてくれることが、何よりの安心材料になります。',
+      ],
+      letter:
+        'ひろみさん、こんにちは🌿\n\n' +
+        'お元気でお過ごしですか？前回のスタイル、とてもお似合いでした✨\n' +
+        'そろそろ髪のコンディションが気になってくる頃かな…と、ふとお顔を思い出しました。\n\n' +
+        '無理のないタイミングで、お茶でも飲みにいらしてくださいね。\n' +
+        'ひろみさんの穏やかな時間を、いつもお待ちしております🍃',
+    },
+    ENFP: {
+      nickname: '陽気な冒険者',
+      personality:
+        'まわりをパッと明るくする太陽みたいな方。新しいこと・かわいいもの・季節のイベントが大好きで、' +
+        '好奇心のアンテナがいつもピンと立っています。おしゃべり上手で、サロンに来ると会話のテンポが心地よく弾みます。' +
+        '「やってみたい！」の一言が出たときが、スタイルチェンジのベストタイミングです。',
+      tips: [
+        '新メニューや流行りのスタイルを写真つきで見せると、目がキラキラします。',
+        '会話を楽しむ方なので、雑談まじりでメニュー決めを進めるのが◎',
+        '帰り際に「次回もたのしみにしていますね」の一言が効きます。',
+      ],
+      letter:
+        '○○さん、こんにちは☀️\n\n' +
+        '最近、季節の新色カラーが入荷しました🍑\n' +
+        '前にちらっとお話していた「やってみたい色」、今ぴったりかも…！と思ってご連絡しちゃいました✨\n\n' +
+        'ご都合のよいとき、ぜひ遊びにいらしてくださいね。\n' +
+        'ひさしぶりのおしゃべりもたのしみにしています🌷',
+    },
+    ISFJ: {
+      nickname: '献身的な守護者',
+      personality:
+        '周りの人をそっと気づかう、あたたかい方。派手な変化より、いつもの安心感を大切にされます。' +
+        '約束の時間をきっちり守り、礼儀正しく、スタッフにも感謝を丁寧に伝えてくださるじゅうみんさんです。' +
+        '「前と同じように」の中に小さな工夫を添えると、とても喜ばれます。',
+      tips: [
+        '前回メニューを覚えていて「前回と同じ◯◯でよろしいですか？」と確認すると安心されます。',
+        '急な提案より、事前に「次回こういうのはいかがですか」と伝えておくのが吉。',
+        '丁寧なあいさつと、お見送りの一言を忘れずに。',
+      ],
+      letter:
+        '○○さん、いつもありがとうございます🌷\n\n' +
+        'お変わりありませんか？前回のカット、とてもお似合いでした。\n' +
+        'そろそろ毛先が気になる頃かと思い、ご案内させていただきますね。\n\n' +
+        'お時間のあるときに、ご都合のよい日をお知らせください。\n' +
+        'いつも通り、心をこめてお迎えいたします🍃',
+    },
+    ESTJ: {
+      nickname: '頼れる隊長',
+      personality:
+        'テキパキ・はっきり・結果重視の頼もしい方。ムダのない会話と、きっちり仕上がるスタイルを好まれます。' +
+        '時間・料金・仕上がりイメージが明確であるほど、満足度が上がるタイプ。' +
+        '信頼できる担当と長く付き合う傾向があり、一度「この人」と決めたら心強い味方になってくれます。',
+      tips: [
+        'メニューと所要時間を最初にきっちり提示すると、安心して任せてくれます。',
+        '迷いの相談は「Aがおすすめです」と結論から伝えるのが好印象。',
+        '時間超過は厳禁。10分前後の前倒し仕上げがベストです。',
+      ],
+      letter:
+        '○○さん、こんにちは。\n\n' +
+        'いつもありがとうございます。次回のメンテナンスのご案内です。\n' +
+        '前回から◯週間ほど経ちますので、カット＋カラーで60分ほどのコースはいかがでしょうか。\n\n' +
+        'ご希望のお日にち・お時間をいただければ、こちらで優先的にお取りいたします。\n' +
+        'ご連絡お待ちしております。',
+    },
+    ISTJ: {
+      nickname: '実直な記録係',
+      personality:
+        '約束を守り、手順を大切にする、まじめで信頼感のある方。派手さはなくても、一度「いい」と決めたお店にはとても長く通ってくださるタイプです。' +
+        '料金・時間・仕上がりが毎回ぶれないことが、最大の安心材料。' +
+        'カルテの記録がそのままお客様の歴史になるような、きっちりしたじゅうみんさんです。',
+      tips: [
+        '前回のメニュー・薬剤・時間を必ず確認し、同じ品質で提供することが信頼に直結します。',
+        '変更提案は「理由」とセットで。「◯ヶ月経ったので今回はこちらが適しています」と論理的に。',
+        '時間厳守。開始・終了の予定を最初に口頭で伝えると安心されます。',
+      ],
+      letter:
+        '○○さん、いつもお世話になっております。\n\n' +
+        '前回のご来店から少しお時間が空きましたので、メンテナンスのご案内を差し上げます。\n' +
+        '前回と同じ内容で、60〜70分ほどを予定しております。\n\n' +
+        'ご都合の良いお日にちを2〜3候補いただければ、こちらで調整させていただきます。\n' +
+        'ご連絡お待ちしております。',
+    },
+    ISFP: {
+      nickname: 'やさしい芸術家',
+      personality:
+        '控えめで、やわらかい感性を持つ方。自分の「好き」をしっかり持ちながらも、人には押し付けず、そっと楽しむタイプです。' +
+        '色・質感・香り…細部の心地よさに敏感で、サロンの空気感そのものを大切にされます。' +
+        '言葉より表情で好みを教えてくれる、さりげないじゅうみんさんです。',
+      tips: [
+        '派手に褒めるより「今日のカラー、光に当たるときれいですね」と具体に寄り添うのが◎',
+        '雑誌やピンタレスト画像を一緒に眺めて、イメージを引き出すのがおすすめ。',
+        '仕上げ前に一度鏡で確認する時間を取り、「ここ気になりますか？」と聞いてあげて。',
+      ],
+      letter:
+        '○○さん、こんにちは🌿\n\n' +
+        'しばらくお会いできていないので、ふとお顔が浮かんでご連絡しました。\n' +
+        '季節が変わって、髪の質感もすこしずつ変わる頃かもしれません。\n\n' +
+        '気ままなタイミングで大丈夫です。ふらっと寄っていただけたらうれしいです🕊\n' +
+        'いつもお待ちしております。',
+    },
+    INFP: {
+      nickname: '夢みる詩人',
+      personality:
+        'やさしくて、少し内省的。自分のなかに物語を持っていて、髪型もその一部として大事にされる方。' +
+        '深い話やこだわりの世界を共有できるスタッフに出会うと、ぐっと心を開いてくださいます。' +
+        '「似合う」より「なりたい私」を一緒に探したい、ロマンチックなじゅうみんさんです。',
+      tips: [
+        'ビフォー／アフターよりも、「どんな気分になりたいか」を聞くのがスタート地点。',
+        '断定より「一緒に考えましょうか」のスタンスで、選択の主導権を渡してあげて。',
+        '雑談では本・音楽・映画など、内面の話題が喜ばれます。',
+      ],
+      letter:
+        '○○さん、お元気でお過ごしでしょうか🌙\n\n' +
+        '季節のにおいが変わってきて、ふと○○さんの髪を思い出しました。\n' +
+        '新しい自分を探したくなる時期ってありますよね。\n\n' +
+        'そんな気分になったら、ゆっくりお話を聞かせてください。\n' +
+        'ご予約のご相談だけでも大丈夫です。お待ちしております📖',
+    },
+    INTJ: {
+      nickname: '静かな策略家',
+      personality:
+        '目的がはっきりしていて、合理的に物事を進める方。「なぜこの薬剤なのか」「なぜこのカットなのか」を自分の中で納得してから進みたいタイプです。' +
+        '無駄な会話より、質のある情報を好む傾向あり。一度信頼すると、指名が揺るがない頼もしいじゅうみんさんです。',
+      tips: [
+        '提案は根拠セットで。「この髪質にはこの薬剤が◯%ダメージ軽減で…」など数字・理由を添えて。',
+        '世間話より、スタイルの戦略（今後半年のプラン）を語ると喜ばれます。',
+        '「お任せでいいですよ」と言われても、要点だけは事前共有を。',
+      ],
+      letter:
+        '○○さん、お世話になっております。\n\n' +
+        'ご来店から少しお時間が空きました。毛先のダメージ蓄積と色落ちを考えると、そろそろメンテナンスのタイミングかと存じます。\n\n' +
+        '次回は「カット＋トリートメント」で90分前後を見込んでおりますが、ご希望があれば調整いたします。\n' +
+        'ご都合のよいお日にち、ご連絡お待ちしております。',
+    },
+    INTP: {
+      nickname: '探究する学者',
+      personality:
+        '物事の仕組みに興味を持つ、思索的な方。薬剤の成分や髪の構造など、プロの話を「面白い」と感じてくれる貴重なタイプです。' +
+        '世間話は少なめでも、好きな話題になると急に饒舌に。独自の美学を持つ、知的なじゅうみんさんです。',
+      tips: [
+        '施術の原理や理論を一言添えると、納得度がぐんと上がります。',
+        '「なぜこうなるのか」と質問されたときは、ごまかさず丁寧に答えて。',
+        '流行より「自分の髪に本当に合うか」を重視されるので、トレンド押しはNG。',
+      ],
+      letter:
+        '○○さん、こんにちは。\n\n' +
+        'ご無沙汰しております。最近、髪質改善の新しい理論が話題になっておりまして、○○さんにもご紹介できればと思いご連絡しました。\n\n' +
+        '内容に興味がありましたら、カウンセリングだけでもどうぞ。\n' +
+        'ご都合の良い日時をお知らせください。',
+    },
+    ESTP: {
+      nickname: '行動派の冒険家',
+      personality:
+        '瞬発力と行動力がピカイチ。思い立ったらすぐ動くタイプで、「今日このあと空いてる？」の突然予約もお手のもの。' +
+        'おしゃべりが楽しく、会話のテンポが速いのが特徴。退屈な時間を嫌うので、施術中の間の取り方が腕の見せどころです。',
+      tips: [
+        '待ち時間には雑誌・ドリンク・お菓子を積極的に。「ヒマ」を作らないのがコツ。',
+        '提案はスピーディーに。迷い時間が長いと集中が切れてしまいます。',
+        'ダイナミックなスタイルチェンジを楽しむ方なので、遠慮せず新提案を。',
+      ],
+      letter:
+        '○○さん、ひさしぶりです！\n\n' +
+        '最近、思い切ってイメチェンしたお客さまが増えていて、○○さんも似合いそうなスタイルを見つけたのでお知らせしちゃいます🔥\n\n' +
+        '空いてる日があったら、気軽にピッと連絡くださいね。\n' +
+        '当日予約もウェルカムです！',
+    },
+    ESFP: {
+      nickname: '陽だまりのエンターテイナー',
+      personality:
+        'いつも場をあたたかく明るくしてくださる、ムードメーカー。お店に来るだけでスタッフの空気まで和むような方です。' +
+        '流行・キラキラ・かわいいものが大好き。記念日や季節のイベントに合わせた提案がよく刺さります。',
+      tips: [
+        'SNS映えや友達ウケを意識した仕上げが◎ 撮影タイムも演出してあげて。',
+        '小さなサプライズ（季節のトリートメントサービスなど）がとても喜ばれます。',
+        '帰り際にハイテンションでお見送り。次回の来店が楽しみになります。',
+      ],
+      letter:
+        '○○さん、こんにちは🌷\n\n' +
+        'もうすぐ季節のイベントシーズンですね！\n' +
+        '○○さんに似合いそうな、華やかなスタイルをいくつか用意してお待ちしています✨\n\n' +
+        'おしゃべりもたくさんしましょう〜。\n' +
+        'お気軽にご予約くださいね🍓',
+    },
+    ENFJ: {
+      nickname: 'あたたかなリーダー',
+      personality:
+        '人を想う気持ちがあふれる、温かい方。スタッフの変化にも気づいてくれて、「髪切った？」「元気そうだね」と声をかけてくれる稀有なじゅうみんさん。' +
+        '自分のオシャレより「まわりにどう映るか」を大切にされるので、TPOに合う提案が効きます。',
+      tips: [
+        '仕事・家庭・行事など、シーンに合わせた提案をすると「そこまで考えてくれてありがとう」と喜ばれます。',
+        'スタッフの個人的な話題にも関心を持たれるので、雑談で自分のことを少し開示するのも◎',
+        'お別れ際の一言に温度をこめて。「またお待ちしてます」に気持ちを乗せて。',
+      ],
+      letter:
+        '○○さん、お元気でお過ごしですか🌼\n\n' +
+        'ふと○○さんのお顔が浮かんでご連絡しました。いつもあたたかいお言葉をいただき、本当にありがとうございます。\n' +
+        '最近、少しお疲れではありませんか？\n\n' +
+        '髪を整えると、気持ちもふわっと軽くなりますよ。\n' +
+        'ご自身のための時間、ぜひつくりにいらしてくださいね。',
+    },
+    ENTJ: {
+      nickname: '頼れる指揮官',
+      personality:
+        '判断力・決断力がずばぬけて高い方。仕事や人生で多くの決断をされているぶん、サロンでは「全部まかせたい」モードと「細かく指示したい」モードが切り替わるタイプ。' +
+        '時間対効果にシビアで、プロの仕事を正当に評価してくれる、やりがいのあるじゅうみんさんです。',
+      tips: [
+        '所要時間・仕上がりイメージ・料金は最初に一気に提示。プロとしての結論から伝えるのが信頼の近道。',
+        '迷いの相談は「Aをおすすめします。理由は…」で即答スタイルが◎',
+        '施術中に仕事の連絡が入ることも。電話の時間は自然に確保してあげて。',
+      ],
+      letter:
+        '○○さん、お世話になっております。\n\n' +
+        '前回のご来店から約◯週間経過しましたので、次回のメンテナンスのご案内です。\n' +
+        'カット＋カラーで75分のコースを優先枠でお取りしております。\n\n' +
+        '候補日を3つほどいただければ、こちらで最適な日時をご提案します。\n' +
+        'ご返信お待ちしております。',
+    },
+    ENTP: {
+      nickname: 'ひらめきの発明家',
+      personality:
+        'アイデアマンで、新しいこと・面白いことが大好物。「次はどんな挑戦をしよう？」と一緒に考えられる、遊び心のあるじゅうみんさんです。' +
+        '議論やブレストも好まれるので、スタッフと対等に意見を交わせる関係性がぴったりです。',
+      tips: [
+        '複数の提案を並べて「どれが一番面白いと思います？」と選んでもらうスタイルが◎',
+        'トレンド情報や海外の最新スタイルをネタに出すと、会話が盛り上がります。',
+        '飽きが早いタイプなので、毎回同じメニューより、小さなアレンジを織り交ぜて。',
+      ],
+      letter:
+        '○○さん、こんにちは💡\n\n' +
+        '最近、海外で流行り始めたカラー／カット技法があって、○○さんなら面白がってくれそうだなぁと思ってご連絡しました。\n\n' +
+        '次回、試してみませんか？もちろんカウンセリングで相談してから決められます。\n' +
+        'ご興味あれば、ぜひご連絡ください🌀',
+    },
+    ISTP: {
+      nickname: '冷静な職人',
+      personality:
+        '無駄な会話を好まず、淡々と、しかし確かな美意識を持つ方。プロの技術をじっと観察し、仕事ぶりで信頼を決めるタイプです。' +
+        '気に入ったスタイルは長く続ける職人気質。派手な演出より、確実な仕上がりが何よりの満足につながります。',
+      tips: [
+        '余計な雑談はせず、「今日の調子はどうですか？」くらいの距離感が心地よい方です。',
+        '技術の話（使う道具や手順）をポイントだけ共有すると、理解と尊敬が深まります。',
+        'アフターケアのアドバイスは紙やLINEで渡すと、自分のペースで読めるので助かるタイプ。',
+      ],
+      letter:
+        '○○さん、お世話になっております。\n\n' +
+        'ご無沙汰しております。そろそろ毛先のコンディションが気になる頃かと存じます。\n' +
+        '前回の仕上がりをベースに、今回はメンテナンス中心のご提案を考えております。\n\n' +
+        'ご都合の良い日時をお知らせください。お待ちしております。',
+    },
+    ESFJ: {
+      nickname: '世話好きの親友',
+      personality:
+        '人とのつながりを大切にする、社交的でやさしい方。スタッフの名前・出身・最近の出来事まで覚えていてくださる、常連の鑑のようなじゅうみんさんです。' +
+        '「ありがとう」「お疲れさま」を欠かさない方なので、こちらからも温度のある対応を返してあげたいタイプ。',
+      tips: [
+        '前回の会話の続きから話し始めると、とても喜ばれます。（「お子さんの発表会どうでした？」など）',
+        'お友達紹介に積極的な方が多いので、紹介カードや特典を用意しておくと効果大。',
+        '季節の挨拶・お礼のLINEは習慣化すると、ファン度がさらに上がります。',
+      ],
+      letter:
+        '○○さん、お元気でお過ごしですか🌸\n\n' +
+        'いつもあたたかいお気遣いをいただき、本当にありがとうございます。\n' +
+        'しばらくお顔を拝見できていないので、ちょっと心配になってご連絡しました。\n\n' +
+        'ご都合の良いときに、お気軽にお立ち寄りくださいね。\n' +
+        '○○さんとのおしゃべり、いつも楽しみにしております☕',
+    },
+  };
+
+  const DEFAULT_TIPS = [
+    'まずは一言「ようこそ」。顔を覚えていることを伝えると安心されます。',
+    'メニュー決めは急がせず、イメージ写真を見せながらゆっくり。',
+    'お会計時に次回の目安をさりげなく添えると、次の来店につながります。',
+  ];
+  const DEFAULT_PERSONALITY =
+    'これから少しずつ、お人柄が見えてくるじゅうみんさんです。' +
+    '来店ごとの小さな会話を大切にしていくと、16タイプ分析の精度も上がっていきます。';
+
+  // ─────────────────────────────────────────────
+  // 描画ロジック
+  // ─────────────────────────────────────────────
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d)) return '—';
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  }
+
+  // 次のマイルストーン（来店回数 or 年数、近い方を返す）
+  function computeNextMilestone(c) {
+    const vc = Number(c.visit_count) || 0;
+    const visitSteps = [
+      { n: 10,  emoji: '✨', label: '10回達成' },
+      { n: 20,  emoji: '⭐', label: '20回達成' },
+      { n: 48,  emoji: '💎', label: '48回達成' },
+      { n: 50,  emoji: '💎', label: '50回達成' },
+      { n: 100, emoji: '👑', label: '100回達成' },
+    ];
+    const nextVisit = visitSteps.find(s => s.n > vc);
+
+    const first = c.first_visit_at ? new Date(c.first_visit_at) : null;
+    let nextYear = null;
+    if (first && !isNaN(first)) {
+      const years = (Date.now() - first.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+      const yearSteps = [
+        { n: 1,  emoji: '🌱', label: '1年クルー' },
+        { n: 5,  emoji: '🎖️', label: '5年クルー' },
+        { n: 10, emoji: '🏅', label: '10年クルー' },
+      ];
+      const s = yearSteps.find(s => s.n > years);
+      if (s) {
+        const remainYears = Math.max(0, s.n - years);
+        const remainMonths = Math.ceil(remainYears * 12);
+        nextYear = { ...s, hint: `あと${remainMonths}ヶ月で達成`, sortKey: remainMonths / 12 };
+      }
+    }
+
+    let nextVisitObj = null;
+    if (nextVisit) {
+      const remain = nextVisit.n - vc;
+      // おおよその到達時期（年/12ヶ月で visits/year を推定）
+      let yearsUntil = 0;
+      if (first && !isNaN(first) && vc > 0) {
+        const rel = (Date.now() - first.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+        const rate = vc / Math.max(rel, 0.5); // visits / year
+        yearsUntil = rate > 0 ? remain / rate : 1;
+      }
+      nextVisitObj = { ...nextVisit, hint: `あと${remain}回で達成`, sortKey: yearsUntil };
+    }
+
+    // どちらかだけあればそれを、両方あれば近い方を返す
+    const candidates = [nextVisitObj, nextYear].filter(Boolean);
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => a.sortKey - b.sortKey);
+    return candidates[0];
+  }
+
+  function firstName(fullName) {
+    if (!fullName) return 'お客様';
+    // 姓名の間に半角/全角スペースがあれば下の名前を優先。
+    const parts = String(fullName).trim().split(/[\s　]+/);
+    return parts.length >= 2 ? parts[parts.length - 1] : parts[0];
+  }
+
+  function show(id) { document.getElementById(id).classList.remove('hidden'); }
+  function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+  function renderError(msg) {
+    hide('loading');
+    hide('content');
+    show('errorBox');
+    document.getElementById('errorMsg').textContent = msg;
+  }
+
+  function renderCard(data) {
+    const c = data.customer;
+    document.getElementById('karteNoLabel').textContent = `#${c.karte_no}`;
+
+    // 動物
+    const animalKey = ANIMAL_SVG[c.mq_animal] ? c.mq_animal : 'sheep';
+    document.getElementById('animalSvg').innerHTML = ANIMAL_SVG[animalKey];
+    document.getElementById('animalSuffix').textContent = ANIMAL_JA[animalKey] || '';
+
+    // 名前（フルネーム） + 動物名
+    document.getElementById('charName').textContent = c.name || 'お客様';
+
+    // なかよしレベル = mq_level（無ければ visit_count）
+    const heart = Number(c.mq_level) || Number(c.visit_count) || 0;
+    document.getElementById('heartLevel').textContent = heart;
+
+    // 16タイプ
+    const mbtiBox = document.getElementById('mbtiBox');
+    if (c.mq_type_4letter) {
+      mbtiBox.classList.remove('pending');
+      document.getElementById('mbti4').textContent = c.mq_type_4letter;
+      document.getElementById('mbtiNick').textContent = c.mq_type_nickname || '';
+    } else {
+      mbtiBox.classList.add('pending');
+      document.getElementById('mbti4').textContent = '16タイプ分析中...';
+    }
+
+    // じょうたい・来店バッジ
+    const statRow = document.getElementById('statRow');
+    statRow.innerHTML = '';
+    if (c.mq_state) {
+      const b = document.createElement('span');
+      b.className = `badge state-${c.mq_state}`;
+      b.textContent = c.mq_state;
+      statRow.appendChild(b);
+    }
+    const visitBadge = document.createElement('span');
+    visitBadge.className = 'badge visit';
+    visitBadge.textContent = `来店 ${c.visit_count || 0}回`;
+    statRow.appendChild(visitBadge);
+
+    if (c.last_visit_at) {
+      const recent = document.createElement('span');
+      recent.className = 'badge recent';
+      recent.textContent = `最終 ${fmtDate(c.last_visit_at)}`;
+      statRow.appendChild(recent);
+    }
+
+    // ご無沙汰判定（固定失客 or 最終来店が1年以上前）
+    const lastVisit = c.last_visit_at ? new Date(c.last_visit_at) : null;
+    const overOneYear = lastVisit && !isNaN(lastVisit)
+      && (Date.now() - lastVisit.getTime()) >= 365 * 24 * 60 * 60 * 1000;
+    const isAway = c.customer_segment === '固定失客' || overOneYear;
+    if (isAway) {
+      document.getElementById('awayBadge').classList.remove('hidden');
+      document.getElementById('leafRight').classList.add('hidden');
+    }
+
+    // 16タイプ別テンプレート
+    const tpl = (c.mq_type_4letter && MBTI_TEMPLATES[c.mq_type_4letter]) || null;
+
+    // こんなひと
+    document.getElementById('personalityBody').textContent =
+      tpl ? tpl.personality : DEFAULT_PERSONALITY;
+
+    // おもてなしのヒント
+    const tipsList = document.getElementById('tipsList');
+    tipsList.innerHTML = '';
+    const tips = tpl ? tpl.tips : DEFAULT_TIPS;
+    for (const t of tips) {
+      const li = document.createElement('li');
+      li.textContent = t;
+      tipsList.appendChild(li);
+    }
+
+    // なかよしさん（stylist があれば表示、なければ非表示）
+    if (c.stylist) {
+      document.getElementById('friendSection').classList.remove('hidden');
+      document.getElementById('friendName').textContent = c.stylist;
+      document.getElementById('friendInitial').textContent = c.stylist.slice(0, 1);
+      document.getElementById('friendReason').textContent =
+        tpl ? `${tpl.nickname}タイプとの相性◎` : 'いつも担当のスタイリストさん';
+    }
+
+    // ことばのおくりもの
+    const fn = firstName(c.name);
+    let letter = tpl ? tpl.letter : `${fn}さん、こんにちは🌿\n\nお元気でお過ごしですか？\nまたお会いできる日を楽しみにしております。`;
+    letter = letter.replace(/○○/g, fn).replace(/ひろみ/g, fn);
+    document.getElementById('letterBody').textContent = letter;
+    if (tpl) {
+      document.getElementById('letterTag').textContent = `${c.mq_type_4letter}さん向け LINEメッセージ案`;
+    }
+
+    document.getElementById('copyBtn').addEventListener('click', () => {
+      const text = document.getElementById('letterBody').textContent;
+      navigator.clipboard?.writeText(text).then(
+        () => { document.getElementById('copyBtn').textContent = '💌 コピーしました'; },
+        () => { alert('コピーに失敗しました。長押しで選択してください。'); }
+      );
+    });
+
+    // ごほうびバッジ
+    const rewardGrid = document.getElementById('rewardGrid');
+    rewardGrid.innerHTML = '';
+    const badges = data.badges || [];
+    if (badges.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'reward';
+      empty.innerHTML = '<span class="emoji">🌱</span><span class="label">これから集めよう</span>';
+      rewardGrid.appendChild(empty);
+    } else {
+      for (const b of badges) {
+        const el = document.createElement('div');
+        el.className = 'reward';
+        el.innerHTML =
+          `<span class="emoji">${b.emoji}</span><span class="label">${b.label}</span>`;
+        rewardGrid.appendChild(el);
+      }
+    }
+
+    // 次のマイルストーン（ぼんやり表示）
+    const next = computeNextMilestone(c);
+    if (next) {
+      const goal = document.createElement('div');
+      goal.className = 'reward next-goal';
+      goal.innerHTML =
+        `<span class="emoji">${next.emoji}</span>` +
+        `<span class="label">${next.label}</span>` +
+        `<span class="mini">${next.hint}</span>`;
+      rewardGrid.appendChild(goal);
+    }
+
+    hide('loading');
+    show('content');
+  }
+
+  // ─────────────────────────────────────────────
+  // 起動: URL から karte_no を抽出 → API 叩く
+  // ─────────────────────────────────────────────
+  (async () => {
+    const m = location.pathname.match(/\/character\/(\d+)/);
+    if (!m) {
+      renderError('URLが正しくありません (/character/:karte_no)');
+      return;
+    }
+    const karteNo = m[1];
+    document.getElementById('karteNoLabel').textContent = `#${karteNo}`;
+
+    try {
+      const res = await fetch(`/character/api/${karteNo}`);
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        renderError(json.error || '読み込みに失敗しました');
+        return;
+      }
+      renderCard(json);
+    } catch (err) {
+      renderError('通信エラー: ' + err.message);
+    }
+  })();
+</script>
+</body>
+</html>
