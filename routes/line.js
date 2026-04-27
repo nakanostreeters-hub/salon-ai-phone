@@ -20,6 +20,7 @@ const {
   resumeAiMode,
   markStaffActive,
   isStaffActive,
+  hydrateSessionFromDb,
 } = require('../services/lineCounselingSession');
 const { classifyHandoffMessage, scheduleSla, clearSlaTimers } = require('../services/handoffMode');
 
@@ -413,6 +414,9 @@ async function handleResumeAiPostback(event, tenant) {
   const replyToken = event.replyToken;
   if (!userId) return true;
 
+  // Phase 2: フラグONのときだけ DB からセッションを復元する（postback もスタッフ排他制御を見るため）。
+  await hydrateSessionFromDb(userId);
+
   // スタッフが既に返信を始めている場合は AI に戻さない
   const currentSession = getOrCreateSession(userId);
   if (isStaffActive(currentSession)) {
@@ -484,6 +488,10 @@ async function handleEvent(event) {
   const replyToken = event.replyToken;
 
   console.log(`[LINE Webhook] メッセージ受信: userId=${userId}, text="${userMessage}"`);
+
+  // Phase 2: フラグONのときだけ DB からセッションを復元する。
+  // OFF時は no-op、Map に既にヒットがあれば DB は見ない（Map が常に正典）。
+  await hydrateSessionFromDb(userId);
 
   // セッション取得/作成
   const session = getOrCreateSession(userId);
@@ -1186,6 +1194,10 @@ async function handleFreelanceMode(event, tenant) {
     : event.message.text;
 
   console.log(`[Freelance] メッセージ受信: tenant=${tenant.id}, userId=${userId}`);
+
+  // Phase 2: フラグONのときだけ DB からセッションを復元する。
+  // OFF時は no-op、Map に既にヒットがあれば DB は見ない（Map が常に正典）。
+  await hydrateSessionFromDb(userId);
 
   // セッション取得/作成
   const session = getOrCreateSession(userId);
