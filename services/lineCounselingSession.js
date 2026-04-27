@@ -3,10 +3,28 @@
 // LINE AIカウンセリング セッション管理
 // ============================================
 
+const sessionStore = require('./sessionStore');
+
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30分
 
 // セッションストア（インメモリ）
 const sessions = new Map();
+
+/**
+ * Phase 2: フラグONのとき、セッション内容をDBへ非同期で永続化する。
+ * fire-and-forget。Promise を await せず、失敗しても応答パスは止めない。
+ * フラグOFF時は何もしない（即return）。
+ */
+function persistAsync(session) {
+  if (!session) return;
+  if (!sessionStore.isPersistEnabled()) return;
+  // .catch で握り潰す。saveSessionToDb 内でも warn 済みのため通常は到達しない。
+  Promise.resolve()
+    .then(() => sessionStore.saveSessionToDb(session))
+    .catch((err) => {
+      console.warn('[LINE Session] persistAsync エラー:', err && err.message);
+    });
+}
 
 /**
  * セッションを取得または新規作成
@@ -53,6 +71,7 @@ function getOrCreateSession(userId) {
   };
   sessions.set(userId, session);
   console.log(`[LINE Session] 新規セッション作成: ${userId}`);
+  persistAsync(session);
   return session;
 }
 
@@ -82,6 +101,7 @@ function addMessage(userId, role, content) {
   const session = getOrCreateSession(userId);
   session.conversationHistory.push({ role, content });
   session.updatedAt = Date.now();
+  persistAsync(session);
 }
 
 /**
@@ -94,6 +114,7 @@ function setStatus(userId, status) {
   if (session) {
     session.status = status;
     session.updatedAt = Date.now();
+    persistAsync(session);
   }
 }
 
@@ -106,6 +127,7 @@ function setDisplayName(userId, displayName) {
   const session = getSession(userId);
   if (session) {
     session.displayName = displayName;
+    persistAsync(session);
   }
 }
 
@@ -119,6 +141,7 @@ function patchSession(userId, patch) {
   if (!session) return;
   Object.assign(session, patch);
   session.updatedAt = Date.now();
+  persistAsync(session);
 }
 
 function setConversationState(userId, state) {
@@ -148,6 +171,7 @@ function resumeAiMode(userId) {
   session.conversationState = 'ai_resumed';
   session.holdingMessageSent = false;
   session.updatedAt = Date.now();
+  persistAsync(session);
   return session;
 }
 
