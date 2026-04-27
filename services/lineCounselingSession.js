@@ -187,6 +187,43 @@ function isStaffActive(session) {
 }
 
 /**
+ * Phase 2: 必要に応じて DB からセッションを復元して Map に載せる。
+ *
+ * - フラグ OFF / userId 不在なら即 null。
+ * - Map に有効なセッションがあれば DB は見ない（Map が常に正典）。
+ * - DB ヒット時は updatedAt を「現在時刻」に書き換えて Map に投入する
+ *   （DB の updated_at をそのまま使うと、復元直後にタイムアウト判定で
+ *    消されてしまうケースがあるため）。
+ * - conversationHistory は空配列で初期化（Phase 1 の
+ *   loadConversationHistoryFromDB で別途復元する想定）。
+ * - 失敗・該当なしは null を返し、後続の getOrCreateSession で
+ *   従来通り新規作成される。
+ *
+ * webhook 入口（routes/line.js）から1度だけ await することを想定。
+ */
+async function hydrateSessionFromDb(userId) {
+  if (!sessionStore.isPersistEnabled()) return null;
+  if (!userId) return null;
+  const now = Date.now();
+  const existing = sessions.get(userId);
+  if (existing && now - existing.updatedAt <= SESSION_TIMEOUT_MS) {
+    return existing;
+  }
+  try {
+    const fromDb = await sessionStore.loadSessionFromDb(userId);
+    if (!fromDb) return null;
+    fromDb.conversationHistory = [];
+    fromDb.updatedAt = now;
+    sessions.set(userId, fromDb);
+    console.log(`[LINE Session] DB から復元: ${userId} (state=${fromDb.conversationState})`);
+    return fromDb;
+  } catch (err) {
+    console.warn('[LINE Session] hydrateSessionFromDb 例外:', err && err.message);
+    return null;
+  }
+}
+
+/**
  * セッションを削除
  * @param {string} userId
  */
@@ -223,4 +260,5 @@ module.exports = {
   markStaffActive,
   resumeAiMode,
   isStaffActive,
+  hydrateSessionFromDb,
 };
