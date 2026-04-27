@@ -233,13 +233,24 @@ function deleteSession(userId) {
 
 /**
  * 期限切れセッションのクリーンアップ
+ *
+ * Phase 2: フラグONのとき、DB側からも fire-and-forget で削除する。
+ * DB削除失敗は warn のみ（次回 cleanup で再試行されるため致命的ではない）。
  */
 function cleanupExpiredSessions() {
   const now = Date.now();
+  const persistOn = sessionStore.isPersistEnabled();
   for (const [userId, session] of sessions) {
     if (now - session.updatedAt > SESSION_TIMEOUT_MS) {
       sessions.delete(userId);
       console.log(`[LINE Session] 期限切れ削除: ${userId}`);
+      if (persistOn) {
+        Promise.resolve()
+          .then(() => sessionStore.deleteSessionFromDb(userId))
+          .catch((err) => {
+            console.warn('[LINE Session] DB cleanup エラー:', err && err.message);
+          });
+      }
     }
   }
 }

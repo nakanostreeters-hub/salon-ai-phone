@@ -338,7 +338,60 @@ CREATE POLICY "service_role_only" ON line_sessions
 ## 11. 関連ファイル参照（事実ベース）
 
 - `services/lineCounselingSession.js` — Phase 1 時点でインメモリ実装（203行）
+- `services/sessionStore.js` — Phase 2 (B) で追加した DB ラッパー
 - `supabase-client.js:358` — Phase 1 で追加済みの `loadConversationHistoryFromDB`（未接続）
-- `routes/line.js` — セッション利用箇所27箇所（line:14-22, 270, 284, 417-418, 445, 489, 945, 965, 1003, 1078, 1100, 1110, 1121, 1132, 1191, 1246, 1310, 1336, 1422 等）
+- `scripts/migrate-line-sessions.sql` — Phase 2 (A) で追加したDDL（未実行）
+- `routes/line.js` — セッション利用箇所27箇所、webhook入口3箇所に hydrate 追加済（コミットE）
 - `routes/api.js:11,552,618,654` — mycon側からの markStaffActive 経路
-- 既存コミット参考: `4f6f9cf` handoff MVP, `24d9c81` Phase 1 履歴復元関数, `e4a9075` AI ON/OFFトグル
+- Phase 2 コミット: A=`8b3e024` / B=`b58b5a1` / C=`8f05d56` / D=`633c468` / E=`da2866d` / F=本コミット
+- 関連参考: `4f6f9cf` handoff MVP, `24d9c81` Phase 1 履歴復元関数, `e4a9075` AI ON/OFFトグル
+
+---
+
+## 12. 運用ノート（実装完了後）
+
+### 12.1 DDL 実行（コミットA以降、フラグON前に必須）
+```bash
+# Supabase Studio の SQL Editor または psql で実行
+psql "$SUPABASE_DB_URL" -f scripts/migrate-line-sessions.sql
+```
+実行後の確認:
+```sql
+SELECT COUNT(*) FROM public.line_sessions;          -- 0件のはず
+SELECT * FROM pg_policies WHERE tablename='line_sessions'; -- service_role_only ポリシー存在
+```
+
+### 12.2 フラグONの段階導入
+| ステージ | 環境 | 期間 | 観察ポイント |
+|---|---|---|---|
+| 1 | Render 環境変数追加（OFF）| 即 | ENV変更後に再デプロイされていることを確認 |
+| 2 | ステージング ON | 数時間 | line_sessions に行が増えること、エラーログがないこと |
+| 3 | 本番 ON（PREMIER MODELS のみ）| 1週間 | 書き込み成功率、レイテンシ追加分、staff_active 復元が機能しているか |
+| 4 | 全サロン ON | 必要時 | （現状は1サロンしかいないので即時=完了） |
+
+### 12.3 緊急時のロールバック（最速）
+1. Render Dashboard で `SESSION_PERSIST_ENABLED` を空 or `false` に変更。
+2. サービス再起動（自動）。
+3. これでDB読み書きが止まり、**Phase 1 以前と完全に同じ動作**に戻る。
+4. line_sessions テーブルは放置で問題なし（誰も触らないので残骸が消えていくだけ）。
+
+### 12.4 監視ポイント
+- ログに `[SessionStore]` で始まる warn が継続的に出ていないか。
+- Renderダッシュボードでpg接続数の急増がないか（fire-and-forget設計のため通常は接続が貯まらない）。
+- `line_sessions.updated_at` が進捗していること（書き込みが届いている証跡）。
+
+### 12.5 line_sessions の手動メンテナンス例
+```sql
+-- ある userId のセッションを強制リセット（顧客サポート時など）
+DELETE FROM public.line_sessions WHERE line_user_id = 'Uxxxxxx';
+
+-- 24時間以上更新のないセッションを一括削除（cleanupExpiredSessionsの保険）
+DELETE FROM public.line_sessions WHERE updated_at < now() - interval '24 hours';
+
+-- 現在 staff_active のセッション一覧
+SELECT line_user_id, salon_id, conversation_state, updated_at
+FROM public.line_sessions
+WHERE conversation_state = 'staff_active'
+ORDER BY updated_at DESC;
+```
+
