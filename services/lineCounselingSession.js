@@ -234,23 +234,20 @@ function deleteSession(userId) {
 /**
  * 期限切れセッションのクリーンアップ
  *
- * Phase 2: フラグONのとき、DB側からも fire-and-forget で削除する。
- * DB削除失敗は warn のみ（次回 cleanup で再試行されるため致命的ではない）。
+ * Phase 2 (c案): インメモリ Map のエントリだけクリアする。
+ * DB 上の line_sessions 行は残置し、後続の webhook で
+ * hydrateSessionFromDb 経由で staff_active 等の状態を復元できる
+ * ようにする（プロセス再起動耐性／田丸さん事故再発防止）。
+ *
+ * 古い DB 行の整理は Phase 3 もしくは運用 SQL（updated_at 基準の
+ * バッチ DELETE）で別途対応する前提。
  */
 function cleanupExpiredSessions() {
   const now = Date.now();
-  const persistOn = sessionStore.isPersistEnabled();
   for (const [userId, session] of sessions) {
     if (now - session.updatedAt > SESSION_TIMEOUT_MS) {
       sessions.delete(userId);
       console.log(`[LINE Session] 期限切れ削除: ${userId}`);
-      if (persistOn) {
-        Promise.resolve()
-          .then(() => sessionStore.deleteSessionFromDb(userId))
-          .catch((err) => {
-            console.warn('[LINE Session] DB cleanup エラー:', err && err.message);
-          });
-      }
     }
   }
 }
