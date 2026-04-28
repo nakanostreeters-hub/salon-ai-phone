@@ -13,24 +13,23 @@ const {
   getCustomerProfile,
   logCustomerAccess,
 } = require('../supabase-client');
-const { generateAcknowledgement } = require('./acknowledgement');
 
 const STATES = {
   IDLE: 'idle',
   AWAITING_NAME_AND_PHONE: 'awaiting_name_and_phone',
 };
 
-const GREETING_RE = /^(こんにちは|こんばんは|おはよう|はじめまして|初めまして|お世話になっ|お久しぶり|ども|どうも)/;
-const BANNED_RE = /AI|システム|マイコン|サービス|導入/;
-
-const INTRO = 'こんにちは😊 初めましてサロンコンシェルジュです！';
-const ASK_BOTH = 'お名前と電話番号の下4桁を教えていただけますか？';
+// 初回挨拶（固定文言）。
+// 棚田さん事故（既存固定客に「初めまして」「サロンコンシェルジュ」と返してしまった）
+// の再発防止のため、AIが「スタッフへの取次役」であることを明示する役割宣言型に変更。
+// 旧来の「AIが用件を要約してackで返す」経路は誤爆リスクが高いため廃止。
+const INTRO = 'こんにちは😊 PREMIER MODELS のサロン受付AIです。';
+const PURPOSE = 'ご来店内容をスタッフへお繋ぎするため、';
+const ASK_BOTH = 'まずは、お名前と電話番号の下4桁を教えていただけますか？';
 
 const MSG = {
-  // 初回: [ack] あり版
-  ASK_FIRST_TEMPLATE: (ack) => `${INTRO}\n${ack}\n${ASK_BOTH}`,
-  // 初回: 挨拶のみ / ack生成失敗時
-  ASK_FIRST_GREETING: `${INTRO}\nご利用ありがとうございます！\n${ASK_BOTH}`,
+  // 初回: 固定文言（ack 経路は廃止済み）
+  ASK_FIRST_GREETING: `${INTRO}\n${PURPOSE}\n${ASK_BOTH}`,
   // 再問: 片方欠けていた
   ASK_BOTH_AGAIN: 'お名前（フルネーム）と電話番号の下4桁を両方教えていただけますか？😊',
   ESCALATE: '一度担当の者にも確認しますね😊',
@@ -112,17 +111,12 @@ async function logAttempt(userId, inputName, hits, result) {
 
 // ─── 初回メッセージ構築 ───
 
-async function buildInitialMsg(userMessage) {
-  if (!userMessage || GREETING_RE.test(userMessage.trim())) {
-    return MSG.ASK_FIRST_GREETING;
-  }
-  let ack = null;
-  try {
-    ack = await generateAcknowledgement(userMessage);
-  } catch (_) {}
-  if (ack && BANNED_RE.test(ack)) ack = null;
-  if (!ack) return MSG.ASK_FIRST_GREETING;
-  return MSG.ASK_FIRST_TEMPLATE(ack);
+function buildInitialMsg() {
+  // 初回挨拶は固定文言。
+  // 旧版は AI が用件を要約して挟む ack 経路を持っていたが、棚田さん事故で
+  // 既存顧客に対して的外れな ack（「初めまして」を伴って返答）が出るリスク
+  // が顕在化したため廃止。
+  return MSG.ASK_FIRST_GREETING;
 }
 
 // ─── 名前＋下4桁で検索 ───
@@ -168,7 +162,7 @@ async function runLinkingFlow(session, userId, userMessage, helpers) {
     case STATES.IDLE: {
       linking.originalIntent = userMessage;
       linking.state = STATES.AWAITING_NAME_AND_PHONE;
-      const msg = await buildInitialMsg(userMessage);
+      const msg = buildInitialMsg();
       await helpers.sendReply(msg);
       return { handled: true };
     }
