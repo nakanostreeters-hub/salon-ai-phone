@@ -143,6 +143,18 @@ async function completeLinking(session, customer, helpers, userId, inputName) {
   const name = pickName(customer);
   if (name) helpers.setDisplayName(name);
 
+  // 紐付け完了の通知メッセージをお客様に push 送信＋conversation_logs に保存。
+  // 仮説E（1件マッチ成功時の発話保存パス欠落）の解消。
+  // - お客様体験: 「ちゃんと認識された」が即座に分かる
+  // - データ完全性: 本人確認発話と完了応答が customer_id 付きで残る
+  // reply token は後続の originalIntent 再生成 AI 応答用に温存するため push を使う前提。
+  if (ok && helpers.saveLinkingComplete) {
+    const completionMsg = name
+      ? `${name}さん、ありがとうございます😊 確認できました。`
+      : 'ありがとうございます😊 確認できました。';
+    await helpers.saveLinkingComplete(completionMsg, customer.id);
+  }
+
   const originalIntent = session.linking?.originalIntent || null;
   resetLinking(session);
   return { linked: true, originalIntent };

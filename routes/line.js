@@ -1310,6 +1310,35 @@ async function handleFreelanceMode(event, tenant) {
           console.warn('[Linking] 返信失敗:', err.message);
         }
       },
+      // 紐付け1件マッチ成功時専用：DB 保存と LINE 通知を独立 try/catch で実行する。
+      // - DB 保存と LINE 送信を分離 → LINE 失敗時もログだけは残せる（データ完全性優先）
+      // - LINE 送信は pushMessage（reply token は後続 AI 応答用に温存）
+      saveLinkingComplete: async (completionMessage, customerId) => {
+        try {
+          await saveCustomerAndAiMessages({
+            tenantId: tenant.id,
+            customerId,
+            lineUserId: userId,
+            userMessage,
+            aiResponse: completionMessage,
+            messageType: 'text',
+            timestamp: new Date(),
+          });
+        } catch (err) {
+          console.warn('[Linking] 完了通知 DB保存 失敗:', err.message);
+        }
+        try {
+          const client = getTenantLineClient(tenant);
+          if (client) {
+            await client.pushMessage({
+              to: userId,
+              messages: [{ type: 'text', text: completionMessage }],
+            });
+          }
+        } catch (err) {
+          console.warn('[Linking] 完了通知 LINE push 失敗:', err.message);
+        }
+      },
       setDisplayName: (name) => {
         session.displayName = name;
         setDisplayName(userId, name);
