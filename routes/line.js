@@ -1372,10 +1372,15 @@ async function handleFreelanceMode(event, tenant) {
     // [HANDOFF] / [CHOICE_HANDOFF] タグの処理
     const needsHandoff = aiResponse.includes('[HANDOFF]');
     const needsChoice = !needsHandoff && aiResponse.includes('[CHOICE_HANDOFF]');
-    const cleanResponse = aiResponse
+    let cleanResponse = aiResponse
       .replace(/\[HANDOFF\]/g, '')
       .replace(/\[CHOICE_HANDOFF\]/g, '')
       .trim();
+    // [CHOICE_HANDOFF] のときは「サロン受付AIに質問」ボタンの存在を明示する案内文を末尾に付ける。
+    // ボタンを見落とすお客様向けのガイド。conversation_logs にもこの案内文込みで保存される。
+    if (needsChoice) {
+      cleanResponse += '\n\n（何か他に質問あればサロン受付AIに質問ボタンを押してください）';
+    }
 
     // 会話履歴にAI応答を追加
     addMessage(userId, 'assistant', cleanResponse);
@@ -1727,11 +1732,14 @@ function pickHandoffQuickReply(session) {
 }
 
 // ─── 引き継ぎ前の選択用クイックリプライ（[CHOICE_HANDOFF]タグ検出時） ───
-// お客様が悩み・希望スタイルを答えた直後に出し、続けて相談するか担当に繋ぐかを選んでもらう。
+// お客様が悩み・希望スタイルを答えた直後に表示。
+// 「担当に繋ぐ」ボタンは廃止（AI が「担当に予約確認しますね」と既に言っており、
+// 重複して混乱を招くため）。担当に繋いでほしい場合は、お客様が自然文で
+// 「担当の方にお願いします」等と入力すれば [HANDOFF] 経路で処理される。
+// ラベルは初回挨拶の「PREMIER MODELS のサロン受付AI」と表現を統一。
 const CHOICE_QUICK_REPLY = {
   items: [
-    { type: 'action', action: { type: 'message', label: 'さらに質問する', text: '他にも相談したいです' } },
-    { type: 'action', action: { type: 'message', label: '担当に繋ぐ', text: '担当の方にお願いします' } },
+    { type: 'action', action: { type: 'message', label: 'サロン受付AIに質問', text: '他にも相談したいです' } },
   ],
 };
 const AI_RETURN_RE = /AI(に|と)(相談|戻|もど)/i; // 後方互換: 旧QuickReply/自然文の両方を受ける
