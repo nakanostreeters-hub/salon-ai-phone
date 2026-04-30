@@ -5,7 +5,14 @@
 
 const sessionStore = require('./sessionStore');
 
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30分
+// インメモリ session の有効期限。これを超えてアイドルの session は
+// cleanupExpiredSessions（10分周期）または次回アクセス時の lazy 判定で
+// Map から外される。Phase 2 (G) 以降 DB の line_sessions 行は残置されるため、
+// 期限超過後でも会話状態（conversation_state, displayName 等）は復元可能だが、
+// 紐付けフロー進行中の linking state はメモリ専用のため期限超過で失われる。
+// 仮説F（小西さん事例：46分後の本人確認入力で紐付け状態消失）の対応として、
+// 多くのお客様の応答間隔を吸収できる 24 時間に延長。
+const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24時間
 
 // セッションストア（インメモリ）
 const sessions = new Map();
