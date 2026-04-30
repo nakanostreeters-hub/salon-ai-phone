@@ -70,7 +70,7 @@ const { buildLineCounselingPrompt } = require('../prompts/lineCounseling');
 const { buildFreelanceCounselingPrompt } = require('../prompts/freelanceCounseling');
 const { findStaffByName } = require('../config/staff');
 const { getTenant } = require('../config/tenants');
-const { getCustomerProfile, saveConversationLog, saveCustomerAndAiMessages, uploadImageToStorage, hasPriorConversation, logCustomerAccess, getConversationAiEnabled } = require('../supabase-client');
+const { getCustomerProfile, saveConversationLog, saveCustomerAndAiMessages, uploadImageToStorage, hasPriorConversation, logCustomerAccess, getConversationAiEnabled, setConversationAiEnabled } = require('../supabase-client');
 const { buildKarteContext } = require('../ai-receptionist');
 const { CHANNEL_ALL, CHANNEL_NEW, getChannelForStylist } = require('../config/slackChannels');
 
@@ -1472,6 +1472,14 @@ async function handleFreelanceMode(event, tenant) {
         holdingMessageSent: false,
       });
       console.log(`[Handoff State] ${userId} → handoff_pending`);
+
+      // 仮説G対応: ハンドオフ宣言時に AI 応答を自動 OFF。
+      // スタッフ対応中に AI が再応答する事故を構造的に防ぐ（内山様事例の再発防止）。
+      // スタッフが対応完了後、mycon の AI ON/OFF トグルで再有効化する既存運用で復旧可能。
+      // fire-and-forget。失敗時も応答パス（Slack 通知等）は継続させる。
+      setConversationAiEnabled(userId, false, tenant.id).catch(err => {
+        console.warn('[Handoff] AI auto-disable 失敗:', err && err.message);
+      });
 
       // 監査ログ: スタッフ引き継ぎ
       logCustomerAccess({
