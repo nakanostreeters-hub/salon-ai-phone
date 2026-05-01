@@ -447,6 +447,38 @@ async function findCustomersByName(name, salonId) {
     return { customers: exact, matchKind: 'exact' };
   }
 
+  // 1.5. DB 側の customer_name / yomigana にスペース（半角／全角／タブ）が
+  //      入っているケースを救済。入力 "古賀多恵子" に対して DB の
+  //      "古賀　多恵子" がヒットしない問題への対応（customers 全体で
+  //      53.7% がスペース入りのため影響大）。
+  //      姓1文字目＋名末尾1文字を含む候補を ilike で広めに取得し、
+  //      クライアント側で空白除去後の文字列等価で絞り込む。
+  //      noSpace.length < 2 のときは head==tail で絞り込みが意味を成さないため skip。
+  if (noSpace.length >= 2) {
+    const head = noSpace.charAt(0);
+    const tail = noSpace.charAt(noSpace.length - 1);
+    let q15 = client.from('customers').select('*');
+    if (sid) q15 = q15.eq('salon_id', sid);
+    q15 = q15.ilike('customer_name', `%${head}%`).ilike('customer_name', `%${tail}%`);
+    // limit(500): "田 子" など最頻出組合せでも 218件のため余裕を持たせる。
+    // 仮に 500 超でも、その先は誰がいてもヒット率が低く実害小。
+    const { data: cand, error: err15 } = await q15.limit(500);
+    if (err15) {
+      console.warn('[Supabase] 名前検索エラー(normalized):', err15.message);
+    }
+    if (cand && cand.length > 0) {
+      const STRIP = /[\s　\t]+/g;
+      const normalized = cand.filter((c) => {
+        const cn = String(c.customer_name || '').replace(STRIP, '');
+        const yo = String(c.yomigana || '').replace(STRIP, '');
+        return cn === noSpace || yo === noSpace;
+      });
+      if (normalized.length > 0) {
+        return { customers: normalized, matchKind: 'exact_normalized' };
+      }
+    }
+  }
+
   // 2. 部分一致（姓 or 名 だけのケース）
   let q2 = client.from('customers').select('*');
   if (sid) q2 = q2.eq('salon_id', sid);
