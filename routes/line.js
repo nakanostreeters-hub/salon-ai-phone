@@ -495,6 +495,8 @@ async function handleEvent(event) {
 
   // セッション取得/作成
   const session = getOrCreateSession(userId);
+  // Phase 2: line_sessions への書き込み時に salon_id NOT NULL を満たすため明示。
+  session.salonId = process.env.SALON_ID;
 
   // 表示名を取得（初回のみ）
   if (!session.displayName) {
@@ -1204,6 +1206,9 @@ async function handleFreelanceMode(event, tenant) {
 
   // テナント情報をセッションに紐付け
   session.tenantId = tenant.id;
+  // Phase 2: フリーランス経路では tenant.id を salon_id として保存。
+  // tenant.salon_id は将来用フィールド（現状未定義）→ tenant.id にフォールバック。
+  session.salonId = tenant.salon_id || tenant.id || process.env.SALON_ID;
 
   // 表示名を取得（初回のみ）
   if (!session.displayName) {

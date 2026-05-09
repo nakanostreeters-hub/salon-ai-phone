@@ -58,7 +58,10 @@ function mapDbRowToSession(row) {
 function mapSessionToDbRow(session) {
   if (!session || !session.userId) return null;
   const salonId = session.salonId || process.env.SALON_ID;
-  if (!salonId) return null;
+  if (!salonId) {
+    console.warn('[SessionStore] salon_id 解決失敗、書き込みスキップ', { line_user_id: session && session.userId });
+    return null;
+  }
   return {
     line_user_id: session.userId,
     salon_id: salonId,
